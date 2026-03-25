@@ -28,6 +28,7 @@ from .collector import DataCollector
 from .renpy_generator import RenPyGenerator
 from .output_files import (
     generate_characters_rpy,
+    generate_side_images_rpy,
     generate_switches_rpy,
     generate_game_flow_rpy,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "DataCollector",
     "RenPyGenerator",
     "generate_characters_rpy",
+    "generate_side_images_rpy",
     "generate_switches_rpy",
     "generate_game_flow_rpy",
 ]
@@ -53,8 +55,9 @@ def transpile_to_renpy(input_paths: list[str], output_dir: str = "outputs",
     3. Run the data collector to discover all characters, switches, etc.
     4. Generate characters.rpy (Character definitions).
     5. Generate switches.rpy (default game state values).
-    6. Generate a .rpy file for each map's events.
-    7. Generate game_flow.rpy (map navigation labels).
+    6. Generate side_images.rpy (side image declarations per face ID).
+    7. Generate a .rpy file for each map's events.
+    8. Generate game_flow.rpy (map navigation labels).
 
     Args:
         input_paths: List of filesystem paths to RPG Maker MV .json map files.
@@ -103,6 +106,13 @@ def transpile_to_renpy(input_paths: list[str], output_dir: str = "outputs",
     with open(switches_path, "w", encoding="utf-8") as output_file:
         output_file.write(switch_definitions)
     print(f"[OK] {switches_path}")
+
+    # ── Phase 3.5: Generate side_images.rpy (side image declarations) ──
+    side_images_definitions = generate_side_images_rpy(collector)
+    side_images_path = os.path.join(output_dir, "side_images.rpy")
+    with open(side_images_path, "w", encoding="utf-8") as output_file:
+        output_file.write(side_images_definitions)
+    print(f"[OK] {side_images_path}")
 
     # ── Phase 4: Generate a .rpy file for each map's events ──
     for map_id, map_data in sorted(all_map_data.items()):

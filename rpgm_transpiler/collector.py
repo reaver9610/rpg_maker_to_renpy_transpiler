@@ -22,6 +22,7 @@ from .constants import CMD
 class DataCollector:
     """Scans all map data first to collect:
     - Character names used in dialogue
+    - Character face image IDs per asset
     - Switch IDs referenced
     - Variable IDs referenced
     - Self-switch keys used
@@ -35,6 +36,8 @@ class DataCollector:
         Attributes:
             characters: Maps RPG Maker face asset names to cleaned display names
                         (e.g., "$Claire" → "Claire").
+            character_face_ids: Maps face asset names to sets of face image IDs
+                                used in dialogue (e.g., "Claire" → {2, 5}).
             switch_ids: Set of all global switch IDs referenced across events.
             variable_ids: Set of all global variable IDs referenced across events.
             self_switches: Set of (event_id, channel_letter) tuples for local switches.
@@ -44,6 +47,7 @@ class DataCollector:
             map_names: Maps map_id → display_name from the map JSON metadata.
         """
         self.characters: dict[str, str] = {}
+        self.character_face_ids: dict[str, set[int]] = {}
         self.switch_ids: set[int] = set()
         self.variable_ids: set[int] = set()
         self.self_switches: set[tuple[int, str]] = set()
@@ -127,9 +131,11 @@ class DataCollector:
             # SHOW_TEXT: first parameter is the face asset name (speaker identity)
             if command_code == CMD["SHOW_TEXT"] and len(parameters) >= 1:
                 face_name = parameters[0]
+                face_id = parameters[1] if len(parameters) > 1 else 0
                 if face_name:  # Empty string means no speaker (narration)
                     display_name = self._clean_character_name(face_name)
                     self.characters[face_name] = display_name
+                    self.character_face_ids.setdefault(face_name, set()).add(face_id)
 
             # CONTROL_SWITCHES: sets a contiguous range of switches to ON/OFF
             elif command_code == CMD["CONTROL_SWITCHES"]:

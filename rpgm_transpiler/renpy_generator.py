@@ -4,10 +4,11 @@ Converts a single RPG Maker MV map's event data into Ren'Py .rpy script source.
 Handles dialogue text, player choices, conditional branches, switch/variable
 modifications, map transfers, sound effects, plugin commands, and more.
 
-Also exports three pure helper functions used across the package:
+Also exports four pure helper functions used across the package:
 - safe_var(): Converts names to safe Python variable names.
 - safe_label(): Converts event names to valid Ren'Py labels.
 - clean_text(): Strips RPG Maker escape codes from dialogue text.
+- side_image_tag(): Converts face asset names to Ren'Py image tags.
 """
 
 # ═══════════════════════════════════════════════════════════════════
@@ -86,6 +87,26 @@ def clean_text(text: str) -> str:
     return text
 
 
+def side_image_tag(face_name: str) -> str:
+    """Convert an RPG Maker face asset name to a Ren'Py image tag.
+
+    Strips special prefixes ($, !), lowercases, inserts underscores at
+    camelCase boundaries, and replaces spaces. Produces a tag suitable
+    for use in Ren'Py `image side` declarations and Character `image=`.
+
+    Args:
+        face_name: Raw face asset name (e.g., "$People3", "!SailorSkipper").
+
+    Returns:
+        Safe image tag (e.g., "people3", "sailor_skipper").
+    """
+    name = face_name.replace("$", "").replace("!", "")
+    name = re.sub(r"([a-z])([A-Z])", r"\1_\2", name)
+    name = re.sub(r"\s+", "_", name)
+    name = name.lower()
+    return "".join(char for char in name if char.isalnum() or char == "_")
+
+
 def clean_text_preserve_lines(text: str) -> str:
     """Like clean_text but preserves internal line breaks.
 
@@ -139,6 +160,7 @@ class RenPyGenerator:
         self._text_buffer: list[str] = []    # Accumulates multi-line dialogue text
         self._current_speaker: str | None = None  # Active speaker name (or None for narration)
         self._current_face: str | None = None     # Active face asset name (or None)
+        self._current_face_id: int | None = None  # Active face image ID within face sheet
 
     def _indent(self) -> str:
         """Return the current indentation prefix (4 spaces per level).
@@ -341,14 +363,17 @@ class RenPyGenerator:
             elif command_code == CMD["SHOW_TEXT"]:
                 self._flush_text()
                 face_asset_name = parameters[0] if len(parameters) > 0 else ""
+                face_id = parameters[1] if len(parameters) > 1 else 0
                 if face_asset_name:
                     # Look up the display name from collected character data
                     self._current_speaker = self.collector.characters.get(face_asset_name, face_asset_name)
                     self._current_face = face_asset_name
+                    self._current_face_id = face_id
                 else:
                     # No face = narration (no speaker)
                     self._current_speaker = None
                     self._current_face = None
+                    self._current_face_id = None
 
             # TEXT_LINE: a single line of dialogue text, appended to buffer
             elif command_code == CMD["TEXT_LINE"]:
@@ -852,7 +877,10 @@ class RenPyGenerator:
 
         if self._current_speaker:
             speaker_variable = safe_var(self._current_speaker)
-            self._emit(f'{speaker_variable} "{full_dialogue_text}"')
+            if self._current_face_id is not None:
+                self._emit(f'{speaker_variable} {self._current_face_id} "{full_dialogue_text}"')
+            else:
+                self._emit(f'{speaker_variable} "{full_dialogue_text}"')
         else:
             self._emit(f'"{full_dialogue_text}"')
 
@@ -869,7 +897,8 @@ class RenPyGenerator:
 
         if self._current_speaker:
             speaker_variable = safe_var(self._current_speaker)
-            self.lines.append(f'{base_indent}{speaker_variable} """')
+            prefix = f"{speaker_variable} {self._current_face_id}" if self._current_face_id is not None else speaker_variable
+            self.lines.append(f'{base_indent}{prefix} """')
             for line in lines:
                 self.lines.append(f"{content_indent}{line}")
             self.lines.append(f'{base_indent}"""')

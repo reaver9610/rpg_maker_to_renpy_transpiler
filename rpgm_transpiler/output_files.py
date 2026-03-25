@@ -11,7 +11,7 @@ Produces three supporting files that the main map scripts depend on:
 # ═══════════════════════════════════════════════════════════════════
 
 from .collector import DataCollector
-from .renpy_generator import safe_var
+from .renpy_generator import safe_var, side_image_tag
 
 
 def _get_character_color(face_name: str) -> str:
@@ -80,9 +80,16 @@ def generate_characters_rpy(collector: DataCollector) -> str:
     for face_name, display_name in sorted(collector.characters.items()):
         safe_variable_name = safe_var(display_name)
         character_color = _get_character_color(face_name)
-        output_lines.append(
-            f'define {safe_variable_name} = Character("{display_name}", color="{character_color}")'
-        )
+        has_face_ids = face_name in collector.character_face_ids and collector.character_face_ids[face_name]
+        if has_face_ids:
+            image_tag = side_image_tag(face_name)
+            output_lines.append(
+                f'define {safe_variable_name} = Character("{display_name}", color="{character_color}", image="{image_tag}")'
+            )
+        else:
+            output_lines.append(
+                f'define {safe_variable_name} = Character("{display_name}", color="{character_color}")'
+            )
 
     output_lines.append("")
     return "\n".join(output_lines)
@@ -198,6 +205,52 @@ def generate_game_flow_rpy(all_map_data: dict[int, dict],
         output_lines.append(f"    # {map_name}")
         output_lines.append(f"    call map_{map_id}_events")
         output_lines.append(f"    return")
+        output_lines.append("")
+
+    return "\n".join(output_lines)
+
+
+def generate_side_images_rpy(collector: DataCollector) -> str:
+    """Generate side_images.rpy with Ren'Py side image declarations.
+
+    Creates a .rpy file containing `image side` statements for every
+    character + face image ID combination discovered during collection.
+    Each declaration references a placeholder path in the side_images/
+    directory where the user should place cropped face images.
+
+    RPG Maker MV face sheets are 4x2 grids of 144x144 face images.
+    The user must crop individual faces from these sheets and place
+    them at the referenced paths (e.g., side_images/people3_7.png).
+
+    Args:
+        collector: DataCollector instance populated with character and face ID data.
+
+    Returns:
+        Complete .rpy source string for side_images.rpy.
+    """
+    output_lines: list[str] = []
+
+    # File header with instructions
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("# SIDE IMAGES")
+    output_lines.append("# Auto-generated from RPG Maker MV")
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("")
+    output_lines.append("# Place cropped face images in a side_images/ directory.")
+    output_lines.append("# RPG Maker MV face sheets: 4x2 grid, 144x144 per face.")
+    output_lines.append("# Face index 0=top-left, 1=top-center-left, ..., 7=bottom-right.")
+    output_lines.append("")
+
+    for face_name in sorted(collector.character_face_ids.keys()):
+        face_ids = sorted(collector.character_face_ids[face_name])
+        if not face_ids:
+            continue
+        tag = side_image_tag(face_name)
+        safe_name = face_name.replace("$", "").replace("!", "").lower()
+        for face_id in face_ids:
+            output_lines.append(
+                f'image side {tag} {face_id} = "side_images/{safe_name}_{face_id}.png"'
+            )
         output_lines.append("")
 
     return "\n".join(output_lines)
