@@ -1,22 +1,25 @@
-# transpiler_rpy.py
-"""
-RPG Maker MV → Ren'Py Transpiler
+"""CLI entry point for the RPG Maker MV to Ren'Py transpiler.
 
-Converts RPG Maker MV JSON map files to Ren'Py .rpy scripts.
-Focus: dialogue, choices, conditional branches, switches, variables.
+Parses command-line arguments to determine input files (single file, multiple
+files, directory, or glob pattern), resolves them to a list of .json paths,
+and invokes the transpilation pipeline.
 
 Usage:
-    python transpiler_rpy.py map1.json [map2.json ...]
-    python transpiler_rpy.py ./maps_directory/
-    python transpiler_rpy.py -f map1.json
-    python transpiler_rpy.py -m map1.json map2.json
-    python transpiler_rpy.py -d ./maps_directory/
-    python transpiler_rpy.py -r "Map*.json"
-    [-o OUTPUT_DIR | --output OUTPUT_DIR]
+    python transpiler_rpy.py -f map1.json             # Single file
+    python transpiler_rpy.py -m map1.json map2.json   # Multiple files
+    python transpiler_rpy.py -d ./maps_directory/      # Directory
+    python transpiler_rpy.py -r "Map*.json"             # Glob pattern
+    python transpiler_rpy.py -f map1.json -o output/   # Custom output dir
 
 Options:
-    -o OUTPUT_DIR, --output OUTPUT_DIR  Output directory for generated .rpy files (default: outputs)
+    -f FILE          Transpile a single file
+    -m FILES...      Transpile multiple files (space-separated)
+    -d DIRECTORY     Transpile all .json files in a directory
+    -r PATTERN       Transpile files matching a glob pattern
+    -o OUTPUT_DIR    Output directory for generated .rpy files (default: outputs)
 """
+
+from __future__ import annotations
 
 import argparse
 import glob
@@ -26,81 +29,121 @@ import sys
 from rpgm_transpiler import transpile_to_renpy
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(
+def parse_args() -> argparse.Namespace:
+    """Parse and return CLI arguments for the transpiler.
+
+    Defines four mutually exclusive input modes:
+    - `-f/--file`: Single JSON map file.
+    - `-m/--multiple`: Multiple JSON map files (space-separated).
+    - `-d/--dir`: All .json files in a directory.
+    - `-r/--regex`: Files matching a glob pattern.
+
+    Also accepts `-o/--output` for the output directory (default: "outputs").
+
+    Returns:
+        Parsed argument namespace with file/multiple/dir/regex and output attributes.
+    """
+    argument_parser = argparse.ArgumentParser(
         description="RPG Maker MV → Ren'Py Transpiler",
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument(
+    # Mutually exclusive group: exactly one input mode must be specified
+    input_mode_group = argument_parser.add_mutually_exclusive_group(required=True)
+    input_mode_group.add_argument(
         "-f", "--file", metavar="FILE",
         help="Transpile a single file"
     )
-    group.add_argument(
+    input_mode_group.add_argument(
         "-m", "--multiple", metavar="FILES", nargs="+",
         help="Transpile multiple files"
     )
-    group.add_argument(
+    input_mode_group.add_argument(
         "-d", "--dir", metavar="DIRECTORY",
         help="Transpile all .json files in a directory"
     )
-    group.add_argument(
+    input_mode_group.add_argument(
         "-r", "--regex", metavar="PATTERN",
         help="Transpile files matching a glob pattern (e.g., 'Map*.json')"
     )
-    
-    parser.add_argument(
+
+    # Output directory option (defaults to "outputs")
+    argument_parser.add_argument(
         "-o", "--output", metavar="OUTPUT_DIR",
         default="outputs",
         help="Output directory for generated .rpy files (default: outputs)"
     )
 
-    return parser.parse_args()
+    return argument_parser.parse_args()
 
 
-def collect_paths(args) -> list[str]:
-    paths = []
+def collect_paths(cli_args: argparse.Namespace) -> list[str]:
+    """Resolve CLI arguments to a sorted list of .json file paths.
 
-    if args.file:
-        if not os.path.isfile(args.file):
-            print(f"Error: File not found: {args.file}")
+    Validates that all specified files/directories exist, then expands
+    directory and glob inputs into individual file paths. Exits with
+    an error message if any input is invalid or no files are found.
+
+    Args:
+        cli_args: Parsed argument namespace from parse_args().
+
+    Returns:
+        Sorted list of absolute/relative paths to .json map files.
+
+    Raises:
+        SystemExit: If any input path is invalid or no files are found.
+    """
+    resolved_paths: list[str] = []
+
+    # Mode: single file (-f/--file)
+    if cli_args.file:
+        if not os.path.isfile(cli_args.file):
+            print(f"Error: File not found: {cli_args.file}")
             sys.exit(1)
-        paths.append(args.file)
+        resolved_paths.append(cli_args.file)
 
-    elif args.multiple:
-        for f in args.multiple:
-            if not os.path.isfile(f):
-                print(f"Error: File not found: {f}")
+    # Mode: multiple files (-m/--multiple)
+    elif cli_args.multiple:
+        for file_path in cli_args.multiple:
+            if not os.path.isfile(file_path):
+                print(f"Error: File not found: {file_path}")
                 sys.exit(1)
-            paths.append(f)
+            resolved_paths.append(file_path)
 
-    elif args.dir:
-        if not os.path.isdir(args.dir):
-            print(f"Error: Directory not found: {args.dir}")
+    # Mode: directory (-d/--dir) — scan for .json files
+    elif cli_args.dir:
+        if not os.path.isdir(cli_args.dir):
+            print(f"Error: Directory not found: {cli_args.dir}")
             sys.exit(1)
-        for fname in sorted(os.listdir(args.dir)):
-            if fname.endswith(".json"):
-                paths.append(os.path.join(args.dir, fname))
+        for filename in sorted(os.listdir(cli_args.dir)):
+            if filename.endswith(".json"):
+                resolved_paths.append(os.path.join(cli_args.dir, filename))
 
-    elif args.regex:
-        pattern_matches = glob.glob(args.regex)
+    # Mode: glob pattern (-r/--regex)
+    elif cli_args.regex:
+        pattern_matches = glob.glob(cli_args.regex)
         if not pattern_matches:
-            print(f"Error: No files match pattern: {args.regex}")
+            print(f"Error: No files match pattern: {cli_args.regex}")
             sys.exit(1)
-        paths.extend(sorted(pattern_matches))
+        resolved_paths.extend(sorted(pattern_matches))
 
-    if not paths:
+    # Ensure at least one file was found
+    if not resolved_paths:
         print("No .json files found.")
         sys.exit(1)
 
-    return paths
+    return resolved_paths
 
 
-def main():
-    args = parse_args()
-    paths = collect_paths(args)
-    transpile_to_renpy(paths, args.output)
+def main() -> None:
+    """CLI entry point for the RPG Maker MV to Ren'Py transpiler.
+
+    Parses arguments, resolves input paths, and invokes the main
+    transpile_to_renpy pipeline.
+    """
+    cli_args = parse_args()
+    resolved_paths = collect_paths(cli_args)
+    transpile_to_renpy(resolved_paths, cli_args.output)
 
 
 if __name__ == "__main__":
