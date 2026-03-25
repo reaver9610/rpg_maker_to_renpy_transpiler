@@ -4,7 +4,7 @@ setup(
     name="rpgm-transpiler",
     version="0.1.0",
     description="RPG Maker MV to Ren'Py Transpiler",
-    author="Your Name",
+    author="Reaver",
     packages=find_packages(),
     py_modules=["transpiler_rpy"],
     install_requires=[],
