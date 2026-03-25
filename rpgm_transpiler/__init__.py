@@ -25,13 +25,11 @@ import re
 from pathlib import Path
 
 from .collector import DataCollector
-from .renpy_generator import RenPyGenerator
-from .output_files import (
-    generate_characters_rpy,
-    generate_side_images_rpy,
-    generate_switches_rpy,
-    generate_game_flow_rpy,
-)
+from .generator import RenPyGenerator
+from .characters import generate_characters_rpy
+from .switches import generate_switches_rpy
+from .game_flow import generate_game_flow_rpy
+from .side_images import generate_side_images_rpy
 
 
 __all__ = [

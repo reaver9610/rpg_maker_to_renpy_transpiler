@@ -11,8 +11,12 @@ rpgm_transpiler/           # Package
 ├── __init__.py            # transpile_to_renpy() orchestrator + re-exports
 ├── constants.py           # CMD dict (RPG Maker command codes)
 ├── collector.py           # DataCollector class
-├── renpy_generator.py     # RenPyGenerator class + helper functions
-└── output_files.py        # generate_characters_rpy(), generate_switches_rpy(), generate_game_flow_rpy()
+├── helpers.py             # Pure utility functions (safe_var, safe_label, clean_text, side_image_tag)
+├── generator.py           # RenPyGenerator class (map event → Ren'Py conversion)
+├── characters.py          # generate_characters_rpy() + _get_character_color()
+├── switches.py            # generate_switches_rpy()
+├── game_flow.py           # generate_game_flow_rpy()
+└── side_images.py         # generate_side_images_rpy()
 
 transpiler_rpy.py          # CLI entry point
 setup.py                   # Package setup with entry point
@@ -110,8 +114,12 @@ No linter or formatter is configured (no ruff, flake8, black, mypy, etc.). If ad
 ### Package Modules
 - `constants.py` — `CMD` dict mapping RPG Maker command codes to readable names
 - `collector.py` — `DataCollector` class scans map JSON to collect character names, switch/variable IDs, self-switches, items
-- `renpy_generator.py` — `RenPyGenerator` class generates `.rpy` source from a single map's event data; also exports `safe_var()`, `safe_label()`, `clean_text()` helper functions
-- `output_files.py` — file generator functions: `generate_characters_rpy()`, `generate_switches_rpy()`, `generate_game_flow_rpy()`
+- `helpers.py` — Pure utility functions: `safe_var()`, `safe_label()`, `clean_text()`, `clean_text_preserve_lines()`, `side_image_tag()`
+- `generator.py` — `RenPyGenerator` class generates `.rpy` source from a single map's event data
+- `characters.py` — `generate_characters_rpy()` + `_get_character_color()` helper
+- `switches.py` — `generate_switches_rpy()`
+- `game_flow.py` — `generate_game_flow_rpy()`
+- `side_images.py` — `generate_side_images_rpy()`
 - `__init__.py` — `transpile_to_renpy()` orchestrator function; re-exports public API
 
 ### Naming
