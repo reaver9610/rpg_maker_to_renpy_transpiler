@@ -43,7 +43,8 @@ __all__ = [
 ]
 
 
-def transpile_to_renpy(input_paths: list[str], output_dir: str = "outputs") -> None:
+def transpile_to_renpy(input_paths: list[str], output_dir: str = "outputs",
+                       multiline: bool = False) -> None:
     """Transpile one or more RPG Maker MV JSON maps to Ren'Py .rpy scripts.
 
     Runs the full pipeline:
@@ -58,6 +59,7 @@ def transpile_to_renpy(input_paths: list[str], output_dir: str = "outputs") -> N
     Args:
         input_paths: List of filesystem paths to RPG Maker MV .json map files.
         output_dir: Directory to write generated .rpy files (created if missing).
+        multiline: If True, emit multi-line dialogue as Ren'Py triple-quoted strings.
     """
     # Ensure the output directory exists
     os.makedirs(output_dir, exist_ok=True)
@@ -106,7 +108,7 @@ def transpile_to_renpy(input_paths: list[str], output_dir: str = "outputs") -> N
     for map_id, map_data in sorted(all_map_data.items()):
         # Create a generator instance with access to all maps (for transfers)
         generator = RenPyGenerator(
-            map_data, collector, map_id, all_map_data
+            map_data, collector, map_id, all_map_data, multiline=multiline
         )
         map_script_source = generator.generate()
 

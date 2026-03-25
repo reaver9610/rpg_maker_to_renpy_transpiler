@@ -10,6 +10,7 @@ Usage:
     python transpiler_rpy.py -d ./maps_directory/      # Directory
     python transpiler_rpy.py -r "Map*.json"             # Glob pattern
     python transpiler_rpy.py -f map1.json -o output/   # Custom output dir
+    python transpiler_rpy.py -f map1.json -l            # Multiline dialog
 
 Options:
     -f FILE          Transpile a single file
@@ -17,6 +18,7 @@ Options:
     -d DIRECTORY     Transpile all .json files in a directory
     -r PATTERN       Transpile files matching a glob pattern
     -o OUTPUT_DIR    Output directory for generated .rpy files (default: outputs)
+    -l, --multiline  Emit multi-line dialogue as Ren'Py triple-quoted strings
 """
 
 from __future__ import annotations
@@ -72,6 +74,14 @@ def parse_args() -> argparse.Namespace:
         "-o", "--output", metavar="OUTPUT_DIR",
         default="outputs",
         help="Output directory for generated .rpy files (default: outputs)"
+    )
+
+    # Multiline dialog format option
+    argument_parser.add_argument(
+        "-l", "--multiline",
+        action="store_true",
+        default=False,
+        help="Emit multi-line dialogue as Ren'Py triple-quoted strings"
     )
 
     return argument_parser.parse_args()
@@ -143,7 +153,7 @@ def main() -> None:
     """
     cli_args = parse_args()
     resolved_paths = collect_paths(cli_args)
-    transpile_to_renpy(resolved_paths, cli_args.output)
+    transpile_to_renpy(resolved_paths, cli_args.output, multiline=cli_args.multiline)
 
 
 if __name__ == "__main__":

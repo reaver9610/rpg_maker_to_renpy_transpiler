@@ -86,6 +86,25 @@ def clean_text(text: str) -> str:
     return text
 
 
+def clean_text_preserve_lines(text: str) -> str:
+    """Like clean_text but preserves internal line breaks.
+
+    Used in multiline dialog mode where each TEXT_LINE command is its own
+    buffer entry. Strips color codes, trims whitespace, and escapes quotes,
+    but does not collapse line breaks.
+
+    Args:
+        text: Raw RPG Maker text with escape codes.
+
+    Returns:
+        Cleaned text with line breaks preserved.
+    """
+    text = re.sub(r"\\c$$\d+$$", "", text)
+    text = text.strip()
+    text = text.replace('"', '\\"')
+    return text
+
+
 class RenPyGenerator:
     """Generates Ren'Py .rpy source files from RPG Maker MV map data.
 
@@ -99,7 +118,8 @@ class RenPyGenerator:
     """
 
     def __init__(self, map_data: dict[str, Any], collector: DataCollector,
-                 map_id: int = 0, all_map_data: dict[int, dict[str, Any]] | None = None) -> None:
+                 map_id: int = 0, all_map_data: dict[int, dict[str, Any]] | None = None,
+                 multiline: bool = False) -> None:
         """Initialize the generator with map data and shared metadata.
 
         Args:
@@ -107,11 +127,13 @@ class RenPyGenerator:
             collector: Shared DataCollector with character/switch/variable metadata.
             map_id: Numeric ID of this map (from filename).
             all_map_data: All parsed maps, keyed by map ID (for cross-map references).
+            multiline: If True, emit multi-line dialogue as Ren'Py triple-quoted strings.
         """
         self.map_data = map_data
         self.collector = collector
         self.map_id = map_id
         self.all_map_data = all_map_data or {}
+        self.multiline = multiline
         self.lines: list[str] = []           # Output buffer for generated .rpy lines
         self.indent_level = 0                # Current Ren'Py indentation depth
         self._text_buffer: list[str] = []    # Accumulates multi-line dialogue text
@@ -331,7 +353,10 @@ class RenPyGenerator:
             # TEXT_LINE: a single line of dialogue text, appended to buffer
             elif command_code == CMD["TEXT_LINE"]:
                 dialogue_text = parameters[0] if parameters else ""
-                dialogue_text = clean_text(dialogue_text)
+                if self.multiline:
+                    dialogue_text = clean_text_preserve_lines(dialogue_text)
+                else:
+                    dialogue_text = clean_text(dialogue_text)
                 self._text_buffer.append(dialogue_text)
 
             # SHOW_CHOICES: displays a player menu with labeled options
@@ -799,26 +824,60 @@ class RenPyGenerator:
         Ren'Py dialogue line. If a speaker is set, includes the speaker's
         variable name; otherwise emits as narrator text.
 
+        In multiline mode, buffers with 2+ lines are emitted as Ren'Py
+        triple-quoted strings with each buffer entry on its own line.
+        Single-line buffers always use the standard single-quote format.
+
         This method is called at command boundaries (before any non-text
         command) to ensure dialogue is properly grouped.
         """
         if not self._text_buffer:
             return
 
-        # Join all buffered lines into a single dialogue string
+        # In multiline mode with 2+ lines, emit as triple-quoted string
+        if self.multiline and len(self._text_buffer) >= 2:
+            self._flush_multiline_text()
+            return
+
+        # Single-line or non-multiline: join with spaces
         full_dialogue_text = " ".join(self._text_buffer)
         self._text_buffer = []
 
-        # Skip if the result is empty after joining
         if not full_dialogue_text.strip():
             return
 
-        # Emit with speaker name if one is active, otherwise as narrator
+        # In multiline fallback (single line), normalize \n to spaces
+        if self.multiline:
+            full_dialogue_text = full_dialogue_text.replace("\\n", " ")
+
         if self._current_speaker:
             speaker_variable = safe_var(self._current_speaker)
             self._emit(f'{speaker_variable} "{full_dialogue_text}"')
         else:
             self._emit(f'"{full_dialogue_text}"')
+
+    def _flush_multiline_text(self) -> None:
+        """Emit the text buffer as a Ren'Py triple-quoted multiline string.
+
+        Each buffer entry becomes a separate line inside the triple quotes,
+        indented one level deeper than the dialogue statement.
+        """
+        lines = self._text_buffer
+        self._text_buffer = []
+        base_indent = self._indent()
+        content_indent = base_indent + "    "
+
+        if self._current_speaker:
+            speaker_variable = safe_var(self._current_speaker)
+            self.lines.append(f'{base_indent}{speaker_variable} """')
+            for line in lines:
+                self.lines.append(f"{content_indent}{line}")
+            self.lines.append(f'{base_indent}"""')
+        else:
+            self.lines.append(f'{base_indent}"""')
+            for line in lines:
+                self.lines.append(f"{content_indent}{line}")
+            self.lines.append(f'{base_indent}"""')
 
     def _emit_comment(self, comment_text: str) -> None:
         """Emit a Ren'Py comment line.

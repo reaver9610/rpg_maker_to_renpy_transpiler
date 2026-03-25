@@ -65,6 +65,7 @@ rpgm-transpile -r "inputs/Map*.json"
 - `-d, --dir DIRECTORY` - Transpile all `.json` files in a directory
 - `-r, --regex PATTERN` - Transpile files matching a glob pattern
 - `-o, --output OUTPUT_DIR` - Output directory for generated .rpy files (default: outputs)
+- `-l, --multiline` - Emit multi-line dialogue as Ren'Py triple-quoted strings
 
 Output goes to `outputs/` by default.
 
