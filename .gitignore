@@ -1,0 +1,11 @@
+# Test scripts
+test_scripts/
+
+# Input/Output directories (glob patterns)
+*input*/
+*output*/
+
+# Python cache
+*.pyc
+__pycache__/
+*.egg-info/
