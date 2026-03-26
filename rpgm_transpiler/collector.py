@@ -1,15 +1,48 @@
 """Data collector for RPG Maker MV map files.
 
-First-pass scanner that reads all map JSON data to discover every character name,
-switch ID, variable ID, self-switch key, item ID, and map transfer target used
-across all events. The collected metadata is used by the output file generators
-to produce complete Ren'Py definitions (Character objects, default state
-variables, game flow labels).
-"""
+This module implements the first-pass scanner that reads all map JSON data to discover
+every character name, switch ID, variable ID, self-switch key, item ID, and map transfer
+target used across all events. The collected metadata is used by the output file
+generators to produce complete Ren'Py definitions.
 
-# ═══════════════════════════════════════════════════════════════════
-# COLLECTOR — extracts all characters, switches, variables
-# ═══════════════════════════════════════════════════════════════════
+Why Two Passes?
+The transpiler needs to know about ALL game state before generating any output files:
+- characters.rpy needs every character name to define Character() objects
+- switches.rpy needs every switch/variable ID to initialize default values
+- side_images.rpy needs every face asset + face ID combination
+
+Without a collection pass, we'd have to generate output files incrementally, which
+would require complex dependency tracking and potentially multiple file rewrites.
+
+Collection Strategy:
+1. Iterate over every event in every map
+2. For each event page, scan both conditions and commands
+3. Record IDs in sets (for switches/variables) and dicts (for characters)
+4. Pass the populated collector to output generators
+
+RPG Maker JSON Structure:
+Map JSON files have this hierarchy:
+{
+  "display_name": "Town Square",
+  "events": [
+    {
+      "id": 1,
+      "name": "Town Elder",
+      "x": 5,
+      "y": 8,
+      "pages": [
+        {
+          "conditions": { ... },
+          "trigger": 0,
+          "list": [ { "code": 101, "parameters": [...] }, ... ]
+        }
+      ]
+    },
+    null,  // Deleted events are null
+    ...
+  ]
+}
+"""
 
 from __future__ import annotations
 
@@ -20,180 +53,477 @@ from .constants import CMD
 
 
 class DataCollector:
-    """Scans all map data first to collect:
-    - Character names used in dialogue
-    - Character face image IDs per asset
-    - Switch IDs referenced
-    - Variable IDs referenced
-    - Self-switch keys used
-    - Item IDs referenced
-    - Transfer targets (map connections)
+    """Scans all map data to collect game state references.
+
+    The DataCollector performs a first-pass scan of all RPG Maker MV map JSON files
+    to discover every referenced game state element. This information is needed to
+    generate complete Ren'Py initialization files.
+
+    What Gets Collected:
+    - Character names: Used in SHOW_TEXT commands to define Ren'Py Character objects
+    - Face IDs: Used in side_images.rpy to declare image side {tag} {id} variants
+    - Switch IDs: Global boolean flags, initialized to False in switches.rpy
+    - Variable IDs: Global integer values, initialized to 0 in switches.rpy
+    - Self-switches: Event-local booleans (keyed by event_id + channel), init to False
+    - Item IDs: Inventory counters, initialized to 0 in switches.rpy
+    - Map IDs: Transfer targets, used in game_flow.rpy for navigation labels
+    - Plugin commands: Stored for potential special handling
+
+    Data Structures:
+    - characters: dict[face_asset_name → display_name]
+        Maps RPG Maker asset filenames to human-readable names
+        Example: {"$Claire": "Claire", "!SailorSkipper": "Sailor Skipper"}
+
+    - character_face_ids: dict[face_asset_name → set[face_id]]
+        Maps asset names to the specific face image IDs used in dialogue
+        Example: {"Claire": {0, 2, 5}} means faces 0, 2, 5 from Claire's sheet are used
+
+    - switch_ids: set[int]
+        All global switch IDs referenced anywhere in the game
+        Example: {1, 5, 12, 23}
+
+    - variable_ids: set[int]
+        All global variable IDs referenced anywhere in the game
+        Example: {1, 3, 7}
+
+    - self_switches: set[tuple[event_id, channel]]
+        All self-switch references, combining event ID and channel letter
+        Example: {(1, "A"), (1, "B"), (5, "A")}
+
+    - item_ids: set[int]
+        All item IDs referenced in conditions or change commands
+        Example: {1, 5, 12}
+
+    - map_ids: set[int]
+        All map IDs that appear in TRANSFER_PLAYER commands or input files
+        Example: {1, 2, 5}
+
+    - plugin_commands: list[str]
+        All plugin command strings encountered, in order of appearance
+        Example: ["Quest Add main_quest", "Quest Complete main_quest"]
+
+    - map_names: dict[map_id → display_name]
+        Maps map IDs to their human-readable names for game_flow.rpy
+        Example: {1: "Town Square", 2: "Forest Path"}
     """
 
     def __init__(self) -> None:
         """Initialize empty collections for all discovered game state elements.
 
-        Attributes:
-            characters: Maps RPG Maker face asset names to cleaned display names
-                        (e.g., "$Claire" → "Claire").
-            character_face_ids: Maps face asset names to sets of face image IDs
-                                used in dialogue (e.g., "Claire" → {2, 5}).
-            switch_ids: Set of all global switch IDs referenced across events.
-            variable_ids: Set of all global variable IDs referenced across events.
-            self_switches: Set of (event_id, channel_letter) tuples for local switches.
-            item_ids: Set of all item IDs referenced in conditional checks or changes.
-            map_ids: Set of all map IDs that appear in transfer commands or input files.
-            plugin_commands: Ordered list of all plugin command strings encountered.
-            map_names: Maps map_id → display_name from the map JSON metadata.
+        Creates the data structures that will be populated during collection.
+        All collections start empty and are filled by the collect_from_map method.
+
+        Attributes Initialized:
+            characters (dict): Empty dict to store face_asset → display_name mappings
+            character_face_ids (dict): Empty dict to store face_asset → set[face_id] mappings
+            switch_ids (set): Empty set for global switch IDs
+            variable_ids (set): Empty set for global variable IDs
+            self_switches (set): Empty set for (event_id, channel) tuples
+            item_ids (set): Empty set for item IDs
+            map_ids (set): Empty set for map IDs
+            plugin_commands (list): Empty list for plugin command strings
+            map_names (dict): Empty dict for map_id → display_name mappings
         """
+        # Character data: face asset names → cleaned display names
+        # Used by generate_characters_rpy() to create Character() definitions
         self.characters: dict[str, str] = {}
+        
+        # Character face IDs: which specific face images are used per asset
+        # Used by generate_side_images_rpy() to create image side declarations
+        # The set stores face IDs 0-7 (RPG Maker uses 4x2 grids)
         self.character_face_ids: dict[str, set[int]] = {}
+        
+        # Global switches: boolean flags that persist across maps
+        # Used by generate_switches_rpy() to initialize: switch_{id} = False
         self.switch_ids: set[int] = set()
+        
+        # Global variables: integer values that persist across maps
+        # Used by generate_switches_rpy() to initialize: var_{id} = 0
         self.variable_ids: set[int] = set()
+        
+        # Self-switches: event-local boolean flags (A/B/C/D channels)
+        # Keyed by (event_id, channel_letter) to ensure uniqueness per event
+        # Used by generate_switches_rpy() to initialize: selfswitch_{event_id}_{channel} = False
         self.self_switches: set[tuple[int, str]] = set()
+        
+        # Items: inventory counters
+        # Used by generate_switches_rpy() to initialize: item_{id} = 0
         self.item_ids: set[int] = set()
+        
+        # Map IDs: all maps referenced in transfers or loaded as input
+        # Used by generate_game_flow_rpy() to create navigation labels
         self.map_ids: set[int] = set()
+        
+        # Plugin commands: all plugin command strings encountered
+        # Stored in order for potential special handling (e.g., Quest system)
         self.plugin_commands: list[str] = []
+        
+        # Map names: map_id → display_name for readable navigation labels
+        # Used by generate_game_flow_rpy() to comment map labels with names
         self.map_names: dict[int, str] = {}
 
     def collect_from_map(self, map_data: dict[str, Any], map_id: int = 0) -> None:
         """Scan a single map's events to collect all referenced data.
 
-        Iterates over every event and every page within each event, delegating
-        condition scanning and command scanning to dedicated helper methods.
+        This is the main entry point for collection. It iterates over every event
+        in the map and every page within each event, delegating the actual scanning
+        to _collect_conditions and _collect_commands.
+
+        Processing Order:
+        1. Record the map's display name and ID
+        2. Iterate over the events array (skip null entries)
+        3. For each event, iterate over its pages
+        4. Scan page conditions for switch/variable/item IDs
+        5. Scan page commands for all referenced IDs
 
         Args:
             map_data: Parsed JSON object for one RPG Maker map.
-            map_id: Numeric identifier for this map (extracted from filename).
+                Expected structure:
+                {
+                    "display_name": str,
+                    "events": [event_dict | null, ...]
+                }
+            map_id: Numeric identifier for this map.
+                Extracted from the filename (e.g., "Map001.json" → 1).
+                Used to track which map each self-switch belongs to.
+
+        Example:
+            >>> collector = DataCollector()
+            >>> with open("Map001.json") as f:
+            ...     map_data = json.load(f)
+            >>> collector.collect_from_map(map_data, 1)
+            >>> print(collector.characters)
+            {'$Claire': 'Claire', '!SailorSkipper': 'Sailor Skipper'}
         """
-        # Record the map's display name for game flow generation
+        # Step 1: Record the map's display name for game flow generation
+        # The display_name is used in game_flow.rpy comments to identify maps
+        # If missing, we fall back to "Map{id}"
         display_name = map_data.get("display_name", f"Map{map_id}")
+        
+        # Store the name mapping for later use in generate_game_flow_rpy()
         self.map_names[map_id] = display_name
+        
+        # Add this map's ID to the set of known maps
+        # This ensures the map appears in game_flow.rpy even if not referenced in transfers
         self.map_ids.add(map_id)
 
-        # Scan each event's pages for conditions and commands
+        # Step 2: Get the events array from the map data
+        # RPG Maker stores events as an array where indices are event IDs
+        # Deleted events are represented as null (we skip these)
         events = map_data.get("events", [])
+        
+        # Step 3: Iterate over each event in the map
         for event in events:
-            if event is None:  # RPG Maker uses null for deleted event slots
+            # Skip null entries (deleted events in RPG Maker)
+            # RPG Maker uses null to mark deleted event slots in the array
+            if event is None:
                 continue
+            
+            # Get the event's numeric ID
+            # This ID is used in self-switch keys: selfswitch_{event_id}_{channel}
             event_id = event["id"]
+            
+            # Step 4: Iterate over each page in the event
+            # Events can have multiple pages with different conditions
+            # Pages are evaluated in reverse order (highest page number first)
             for page in event.get("pages", []):
+                # Step 5: Scan page conditions for switch/variable/item IDs
+                # Conditions determine when this page is active
                 self._collect_conditions(page.get("conditions", {}), event_id)
+                
+                # Step 6: Scan page commands for all referenced IDs
+                # Commands are the actual event logic (dialogue, choices, etc.)
                 self._collect_commands(page.get("list", []), event_id)
 
     def _collect_conditions(self, conditions: dict[str, Any], event_id: int) -> None:
         """Extract switch/variable/item IDs from an event page's condition block.
 
-        Event pages can be gated on: two global switches, one variable comparison,
-        one self-switch, or one item requirement. Each valid condition is recorded
-        so the output generators can declare default values for all referenced state.
+        RPG Maker event pages can be gated on multiple conditions:
+        - Two global switches (switch1 and switch2)
+        - One variable comparison (variable >= value)
+        - One self-switch (A, B, C, or D)
+        - One item requirement (player must have at least one)
+
+        Each condition type is optional. When a condition is enabled (Valid flag true),
+        the corresponding ID is recorded for state initialization.
+
+        Condition JSON Structure:
+        {
+            "switch1Valid": bool,
+            "switch1Id": int,
+            "switch2Valid": bool,
+            "switch2Id": int,
+            "variableValid": bool,
+            "variableId": int,
+            "variableValue": int,
+            "selfSwitchValid": bool,
+            "selfSwitchCh": str,  # "A", "B", "C", or "D"
+            "itemValid": bool,
+            "itemId": int
+        }
 
         Args:
             conditions: The 'conditions' dict from an event page JSON object.
-            event_id: The owning event's numeric ID (for self-switch keys).
+            event_id: The owning event's numeric ID.
+                Used to create self-switch keys: (event_id, channel).
+
+        Example:
+            >>> conditions = {"switch1Valid": True, "switch1Id": 5}
+            >>> collector._collect_conditions(conditions, 1)
+            >>> print(collector.switch_ids)
+            {5}
         """
-        # Condition type: first global switch must be ON
+        # Condition type 1: First global switch must be ON
+        # If switch1Valid is True, the page only appears when switch1Id is ON
         if conditions.get("switch1Valid"):
+            # Add the switch ID to our set
+            # This ensures switches.rpy initializes: switch_{id} = False
             self.switch_ids.add(conditions["switch1Id"])
 
-        # Condition type: second global switch must be ON
+        # Condition type 2: Second global switch must be ON
+        # Similar to switch1, allows two independent switch conditions
         if conditions.get("switch2Valid"):
             self.switch_ids.add(conditions["switch2Id"])
 
-        # Condition type: variable must meet a threshold value
+        # Condition type 3: Variable must meet a threshold value
+        # The page appears when variableId >= variableValue
+        # Note: Only the variable ID is recorded, not the threshold
+        # The threshold is used at runtime in conditional checks
         if conditions.get("variableValid"):
             self.variable_ids.add(conditions["variableId"])
 
-        # Condition type: a local self-switch must be ON
+        # Condition type 4: A local self-switch must be ON
+        # Self-switches are event-local, keyed by (event_id, channel)
+        # Channel is one of "A", "B", "C", "D" (default "A" if missing)
         if conditions.get("selfSwitchValid"):
+            # Get the channel letter, defaulting to "A"
             channel = conditions.get("selfSwitchCh", "A")
+            # Add the (event_id, channel) tuple to our set
+            # This ensures switches.rpy initializes: selfswitch_{event_id}_{channel} = False
             self.self_switches.add((event_id, channel))
 
-        # Condition type: player must possess at least one of a specific item
+        # Condition type 5: Player must possess at least one of a specific item
+        # The page appears when the player has 1+ of itemId
         if conditions.get("itemValid"):
+            # Add the item ID to our set
+            # This ensures switches.rpy initializes: item_{id} = 0
             self.item_ids.add(conditions["itemId"])
 
     def _collect_commands(self, commands: list[dict[str, Any]], event_id: int) -> None:
         """Extract all referenced IDs from an event page's command list.
 
-        Walks through every command in the list and records switch IDs, variable
-        IDs, self-switch keys, character names, item IDs, map IDs, and plugin
-        commands based on the command's code type.
+        This method walks through every command in the event page's 'list' array
+        and records switch IDs, variable IDs, self-switch keys, character names,
+        item IDs, map IDs, and plugin commands based on the command type.
+
+        Command Dispatch:
+        Each command has a 'code' field identifying its type. We use the CMD
+        dictionary to check codes and extract relevant IDs from parameters.
+
+        Commands Handled:
+        - SHOW_TEXT: Extract face asset name (character) and face ID
+        - CONTROL_SWITCHES: Extract switch ID range
+        - CONTROL_VARIABLES: Extract variable ID range
+        - CONTROL_SELF_SWITCH: Extract self-switch channel
+        - CONDITIONAL: Extract condition-based IDs (switch, variable, self-switch)
+        - TRANSFER_PLAYER: Extract target map ID
+        - CHANGE_ITEMS_CMD: Extract item ID
+        - PLUGIN_COMMAND: Store command string
 
         Args:
             commands: The 'list' array of command objects from an event page.
-            event_id: The owning event's numeric ID (for self-switch keys).
+                Each command has: code (int), indent (int), parameters (list)
+            event_id: The owning event's numeric ID.
+                Used for self-switch keys in CONDITIONAL commands.
+
+        Example:
+            >>> commands = [
+            ...     {"code": 101, "parameters": ["$Claire", 2]},
+            ...     {"code": 121, "parameters": [5, 5, 0]}  # switch 5 = ON
+            ... ]
+            >>> collector._collect_commands(commands, 1)
+            >>> print(collector.characters)
+            {'$Claire': 'Claire'}
+            >>> print(collector.switch_ids)
+            {5}
         """
+        # Iterate over each command in the command list
         for command in commands:
+            # Extract the command code (identifies the command type)
             command_code = command["code"]
+            
+            # Extract the parameters array (command-specific data)
             parameters = command.get("parameters", [])
 
-            # SHOW_TEXT: first parameter is the face asset name (speaker identity)
+            # ── SHOW_TEXT (code 101): Dialogue with face image ──
+            # Parameters: [face_name, face_id, background, position]
+            # We extract face_name (character identity) and face_id (expression)
             if command_code == CMD["SHOW_TEXT"] and len(parameters) >= 1:
+                # Get the face asset name (first parameter)
+                # Empty string means no face (narration)
                 face_name = parameters[0]
+                
+                # Get the face ID (second parameter, default 0)
+                # Face IDs are 0-7 for the 4x2 grid layout
                 face_id = parameters[1] if len(parameters) > 1 else 0
-                if face_name:  # Empty string means no speaker (narration)
+                
+                # Only process if a face asset is specified (not narration)
+                if face_name:
+                    # Convert the face asset name to a readable display name
+                    # Example: "$SailorSkipper" → "Sailor Skipper"
                     display_name = self._clean_character_name(face_name)
+                    
+                    # Store the character mapping: face_name → display_name
+                    # This is used by generate_characters_rpy()
                     self.characters[face_name] = display_name
+                    
+                    # Track which face IDs are used for this character
+                    # Multiple dialogue lines may use different face IDs (expressions)
+                    # setdefault ensures the set exists before adding
                     self.character_face_ids.setdefault(face_name, set()).add(face_id)
 
-            # CONTROL_SWITCHES: sets a contiguous range of switches to ON/OFF
+            # ── CONTROL_SWITCHES (code 121): Set switches ON/OFF ──
+            # Parameters: [start_id, end_id, operation]
+            # Sets a contiguous range of switches to ON (0) or OFF (1)
             elif command_code == CMD["CONTROL_SWITCHES"]:
+                # Extract the range bounds
                 start_id, end_id = parameters[0], parameters[1]
+                
+                # Add every switch ID in the range to our set
+                # RPG Maker uses inclusive ranges: [5, 7] = switches 5, 6, 7
                 for switch_id in range(start_id, end_id + 1):
                     self.switch_ids.add(switch_id)
 
-            # CONTROL_VARIABLES: modifies a contiguous range of variables
+            # ── CONTROL_VARIABLES (code 122): Modify variables ──
+            # Parameters: [start_id, end_id, operation, ...]
+            # Modifies a contiguous range of variables with an operation
             elif command_code == CMD["CONTROL_VARIABLES"]:
+                # Extract the range bounds
                 start_id, end_id = parameters[0], parameters[1]
+                
+                # Add every variable ID in the range to our set
                 for variable_id in range(start_id, end_id + 1):
                     self.variable_ids.add(variable_id)
 
-            # CONTROL_SELF_SWITCH: toggles a local event switch (A/B/C/D)
+            # ── CONTROL_SELF_SWITCH (code 123): Toggle event-local switch ──
+            # Parameters: [channel, operation]
+            # Sets a self-switch (A/B/C/D) to ON (0) or OFF (1)
             elif command_code == CMD["CONTROL_SELF_SWITCH"]:
+                # Get the channel letter (A, B, C, or D)
                 channel = parameters[0]
+                
+                # Add the self-switch key to our set
+                # Key format: (event_id, channel)
                 self.self_switches.add((event_id, channel))
 
-            # CONDITIONAL: branches based on switch, variable, or self-switch
+            # ── CONDITIONAL (code 111): If/else branch ──
+            # Parameters: [condition_type, ...type_specific_params]
+            # Branches based on switch, variable, or self-switch state
             elif command_code == CMD["CONDITIONAL"]:
+                # Get the condition type (0=switch, 1=variable, 2=self-switch, etc.)
                 condition_type = parameters[0]
-                if condition_type == 0:  # Switch condition
+                
+                # Condition type 0: Global switch check
+                # Parameters: [0, switch_id, expected_value]
+                if condition_type == 0:
+                    # Add the switch ID being checked
                     self.switch_ids.add(parameters[1])
-                elif condition_type == 1:  # Variable condition
+                
+                # Condition type 1: Variable comparison
+                # Parameters: [1, variable_id, comparison_type, value]
+                elif condition_type == 1:
+                    # Add the variable ID being checked
                     self.variable_ids.add(parameters[1])
-                elif condition_type == 2:  # Self-switch condition
+                
+                # Condition type 2: Self-switch check
+                # Parameters: [2, channel, expected_value]
+                elif condition_type == 2:
+                    # Add the self-switch key being checked
                     self.self_switches.add((event_id, parameters[1]))
 
-            # TRANSFER_PLAYER: target map ID is parameters[1]
+            # ── TRANSFER_PLAYER (code 201): Jump to another map ──
+            # Parameters: [transfer_type, map_id, x, y, direction, fade]
+            # Teleports the player to a target map
             elif command_code == CMD["TRANSFER_PLAYER"]:
+                # Get the target map ID (second parameter)
                 target_map_id = parameters[1]
+                
+                # Add the target map to our set
+                # This ensures the map has an entry label in game_flow.rpy
                 self.map_ids.add(target_map_id)
 
-            # CHANGE_ITEMS_CMD: adds/removes an item by ID
+            # ── CHANGE_ITEMS_CMD (code 317): Add/remove items ──
+            # Parameters: [..., item_id, ...]
+            # Alternative item change command (plugin-specific variant)
             elif command_code == CMD["CHANGE_ITEMS_CMD"]:
+                # Add the item ID being modified
                 self.item_ids.add(parameters[1])
 
-            # PLUGIN_COMMAND: stores the plugin command string for later use
+            # ── PLUGIN_COMMAND (code 356): Custom plugin command ──
+            # Parameters: [command_string]
+            # Calls a plugin-defined command (e.g., quest system)
             elif command_code == CMD["PLUGIN_COMMAND"]:
+                # Store the plugin command string for potential special handling
+                # The list maintains order in case sequence matters
                 self.plugin_commands.append(parameters[0])
 
     @staticmethod
     def _clean_character_name(face_name: str) -> str:
         """Convert an RPG Maker face asset name to a readable display name.
 
-        RPG Maker uses asset filenames as character identifiers (e.g., "$Claire",
-        "!GuardPeople3"). This method strips special prefixes, inserts spaces at
-        camelCase boundaries, and trims whitespace.
+        RPG Maker MV uses asset filenames as character identifiers, which often
+        contain special prefixes and camelCase naming. This method transforms
+        these into human-readable names suitable for Ren'Py Character definitions.
+
+        RPG Maker Asset Naming Conventions:
+        - "$" prefix: Large sprite (typically used for important characters)
+        - "!" prefix: No shadow (used for floating characters or special sprites)
+        - CamelCase: Standard naming convention (e.g., "SailorSkipper")
+        - Numbers: Generic NPCs often numbered (e.g., "People3")
+
+        Transformation Steps:
+        1. Remove "$" and "!" prefixes (RPG Maker sprite markers)
+        2. Insert spaces at camelCase boundaries (SailorSkipper → Sailor Skipper)
+        3. Trim leading/trailing whitespace
 
         Args:
-            face_name: Raw face asset name from the JSON (e.g., "$SailorSkipper").
+            face_name: Raw face asset name from RPG Maker JSON.
+                Examples: "$Claire", "!SailorSkipper", "GuardPeople3"
 
         Returns:
-            Cleaned display name suitable for Ren'Py Character definitions
-            (e.g., "Sailor Skipper").
+            Cleaned display name suitable for Ren'Py Character definitions.
+            Examples: "Claire", "Sailor Skipper", "Guard People3"
+
+        Example:
+            >>> DataCollector._clean_character_name("$Claire")
+            'Claire'
+            >>> DataCollector._clean_character_name("!SailorSkipper")
+            'Sailor Skipper'
+            >>> DataCollector._clean_character_name("GuardPeople3")
+            'Guard People3'
+
+        Note:
+            This is a static method because it's a pure transformation function
+            with no dependency on instance state. It's used during collection
+            to create display names from asset names.
+
+        See Also:
+            helpers.side_image_tag: Similar transformation for image tags
+            (lowercase, underscores instead of spaces)
         """
-        # Remove RPG Maker asset prefixes: $ = large sprite, ! = no shadow
+        # Step 1: Remove RPG Maker asset prefixes
+        # "$" indicates a large sprite (used for important characters)
+        # "!" indicates no shadow (for floating or special sprites)
+        # We strip these as they have no meaning in Ren'Py
         name = face_name.replace("$", "").replace("!", "")
-        # Insert spaces at camelCase boundaries: "SailorSkipper" → "Sailor Skipper"
+        
+        # Step 2: Insert spaces at camelCase boundaries
+        # Pattern: lowercase letter followed by uppercase letter
+        # Example: "SailorSkipper" matches "rS" → "r S" → "Sailor Skipper"
+        # The regex captures two groups and inserts a space between them
+        # r"\1 \2" means "keep group 1, add space, keep group 2"
         name = re.sub(r"([a-z])([A-Z])", r"\1 \2", name)
+        
+        # Step 3: Trim whitespace and return
+        # Handles cases where prefix removal left leading space
         return name.strip()

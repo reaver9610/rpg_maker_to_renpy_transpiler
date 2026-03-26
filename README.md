@@ -22,19 +22,22 @@ pip install -e .
 
 ```bash
 # Single file
-python transpiler_rpy.py -f inputs/Map001.json
+python transpiler_rpy.py -i --file inputs/Map001.json
 
 # Multiple files
-python transpiler_rpy.py -m inputs/Map001.json inputs/Map002.json
+python transpiler_rpy.py -i --multiple inputs/Map001.json inputs/Map002.json
 
 # Directory
-python transpiler_rpy.py -d inputs/
+python transpiler_rpy.py -i --directory inputs/
 
 # Glob pattern
-python transpiler_rpy.py -r "inputs/Map*.json"
+python transpiler_rpy.py -i --regex "inputs/Map*.json"
 
 # Custom output directory
-python transpiler_rpy.py -d inputs/ -o my_output/
+python transpiler_rpy.py -i --directory inputs/ -o my_output/
+
+# Multiline format
+python transpiler_rpy.py -i --file inputs/Map001.json -f --multiline
 ```
 
 ## Output Files

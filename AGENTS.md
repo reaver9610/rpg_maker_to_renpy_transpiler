@@ -31,16 +31,22 @@ renpy_output/              # Alternative output directory (deprecated)
 ### Development Mode (no install)
 ```bash
 # Single file
-PYTHONPATH=. python transpiler_rpy.py -f inputs/Map001.json
+PYTHONPATH=. python transpiler_rpy.py -i --file inputs/Map001.json
 
 # Multiple files
-PYTHONPATH=. python transpiler_rpy.py -m inputs/Map001.json inputs/Map002.json
+PYTHONPATH=. python transpiler_rpy.py -i --multiple inputs/Map001.json inputs/Map002.json
 
 # Directory
-PYTHONPATH=. python transpiler_rpy.py -d inputs/
+PYTHONPATH=. python transpiler_rpy.py -i --directory inputs/
 
 # Glob pattern
-PYTHONPATH=. python transpiler_rpy.py -r "inputs/Map*.json"
+PYTHONPATH=. python transpiler_rpy.py -i --regex "inputs/Map*.json"
+
+# Custom output directory
+PYTHONPATH=. python transpiler_rpy.py -i --file inputs/Map001.json -o outputs/
+
+# Multiline format
+PYTHONPATH=. python transpiler_rpy.py -i --file inputs/Map001.json -f --multiline
 ```
 
 ### Global Install
@@ -51,25 +57,34 @@ pip install -e .
 Then run globally:
 ```bash
 # Single file
-rpgm-transpile -f inputs/Map001.json
+rpgm-transpile -i --file inputs/Map001.json
 
 # Multiple files
-rpgm-transpile -m inputs/Map001.json inputs/Map002.json
+rpgm-transpile -i --multiple inputs/Map001.json inputs/Map002.json
 
 # Directory
-rpgm-transpile -d inputs/
+rpgm-transpile -i --directory inputs/
 
 # Glob pattern
-rpgm-transpile -r "inputs/Map*.json"
+rpgm-transpile -i --regex "inputs/Map*.json"
+
+# Custom output directory
+rpgm-transpile -i --file inputs/Map001.json -o outputs/
+
+# Multiline format
+rpgm-transpile -i --file inputs/Map001.json -f --multiline
 ```
 
 ### CLI Options
-- `-f, --file FILE` - Transpile a single file
-- `-m, --multiple FILES...` - Transpile multiple files (space-separated)
-- `-d, --dir DIRECTORY` - Transpile all `.json` files in a directory
-- `-r, --regex PATTERN` - Transpile files matching a glob pattern
+- `-i, --input` - Input source (required, use with one of the following sub-options):
+  - `--file FILE` - Transpile a single file
+  - `--multiple FILES...` - Transpile multiple files (space-separated)
+  - `--directory DIR` - Transpile all `.json` files in a directory
+  - `--regex PATTERN` - Transpile files matching a glob pattern
 - `-o, --output OUTPUT_DIR` - Output directory for generated .rpy files (default: outputs)
-- `-l, --multiline` - Emit multi-line dialogue as Ren'Py triple-quoted strings
+- `-f, --format` - Format options (use with one of the following sub-options):
+  - `--single` - Emit single-line dialogue (default)
+  - `--multiline` - Emit multi-line dialogue as Ren'Py triple-quoted strings
 
 Output goes to `outputs/` by default.
 
@@ -96,8 +111,8 @@ Test scripts are in `test_scripts/` directory:
 
 ### Manual Verification
 To verify changes manually:
-1. Run the transpiler on test fixtures: `PYTHONPATH=. python transpiler_rpy.py -d inputs/`
-2. Inspect generated `.rpy` files in `renpy_output/`
+1. Run the transpiler on test fixtures: `PYTHONPATH=. python transpiler_rpy.py -i --directory inputs/`
+2. Inspect generated `.rpy` files in `outputs/`
 3. Verify Ren'Py syntax correctness manually
 
 Test data lives in `inputs/` as `.json` map files (`Map001.json`, `Map002.json`). These are real RPG Maker MV exports, not unit tests.
@@ -159,3 +174,7 @@ No linter or formatter is configured (no ruff, flake8, black, mypy, etc.). If ad
 - Section dividers: `# ═══...═══` for major sections, `# ──...───` for subsections
 - Docstrings on public classes and key methods (triple-quoted, imperative mood)
 - Inline comments with `#` for non-obvious logic
+
+### Documentation
+- Always document with detail every python function
+- Always document with detail every python statment (every line of code)

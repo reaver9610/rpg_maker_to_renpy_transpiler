@@ -5,20 +5,21 @@ files, directory, or glob pattern), resolves them to a list of .json paths,
 and invokes the transpilation pipeline.
 
 Usage:
-    python transpiler_rpy.py -f map1.json             # Single file
-    python transpiler_rpy.py -m map1.json map2.json   # Multiple files
-    python transpiler_rpy.py -d ./maps_directory/      # Directory
-    python transpiler_rpy.py -r "Map*.json"             # Glob pattern
-    python transpiler_rpy.py -f map1.json -o output/   # Custom output dir
-    python transpiler_rpy.py -f map1.json -l            # Multiline dialog
+    python transpiler_rpy.py -i --file map1.json              # Single file
+    python transpiler_rpy.py -i --multiple map1.json map2.json # Multiple files
+    python transpiler_rpy.py -i --directory ./maps_directory/  # Directory
+    python transpiler_rpy.py -i --regex "Map*.json"            # Glob pattern
+    python transpiler_rpy.py -i --file map1.json -o output/     # Custom output dir
+    python transpiler_rpy.py -i --file map1.json -f --multiline # Multiline format
 
 Options:
-    -f FILE          Transpile a single file
-    -m FILES...      Transpile multiple files (space-separated)
-    -d DIRECTORY     Transpile all .json files in a directory
-    -r PATTERN       Transpile files matching a glob pattern
-    -o OUTPUT_DIR    Output directory for generated .rpy files (default: outputs)
-    -l, --multiline  Emit multi-line dialogue as Ren'Py triple-quoted strings
+    -i --file FILE          Transpile a single file
+    -i --multiple FILES...  Transpile multiple files (space-separated)
+    -i --directory DIR      Transpile all .json files in a directory
+    -i --regex PATTERN      Transpile files matching a glob pattern
+    -o OUTPUT_DIR           Output directory for generated .rpy files (default: outputs)
+    -f --single             Emit single-line dialogue (default)
+    -f --multiline          Emit multi-line dialogue as Ren'Py triple-quoted strings
 """
 
 from __future__ import annotations
@@ -27,64 +28,182 @@ import argparse
 import glob
 import os
 import sys
+from collections.abc import Sequence
+from typing import Any
 
 from rpgm_transpiler import transpile_to_renpy
+
+
+class InputAction(argparse.Action):
+    """Custom action to handle -i with sub-flags (--file, --multiple, --directory, --regex).
+
+    This action intercepts -i/--input and the following argument to dispatch
+    to the appropriate input mode subcommand.
+    """
+
+    INPUT_MODES = {
+        "--file": "file",
+        "-file": "file",
+        "--multiple": "multiple",
+        "-multiple": "multiple",
+        "--directory": "directory",
+        "-directory": "directory",
+        "--regex": "regex",
+        "-regex": "regex",
+    }
+
+    def __init__(self, option_strings: list[str], dest: str, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, **kwargs)
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[Any] | None,
+        option_string: str | None = None,
+    ):
+        """Mark that input mode is required; actual parsing happens in custom logic."""
+        setattr(namespace, self.dest, True)
+
+
+class FormatAction(argparse.Action):
+    """Custom action to handle -f with sub-flags (--single, --multiline)."""
+
+    def __init__(self, option_strings: list[str], dest: str, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, **kwargs)
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[Any] | None,
+        option_string: str | None = None,
+    ):
+        """Mark that format mode is specified; actual parsing happens in custom logic."""
+        setattr(namespace, self.dest, True)
 
 
 def parse_args() -> argparse.Namespace:
     """Parse and return CLI arguments for the transpiler.
 
-    Defines four mutually exclusive input modes:
-    - `-f/--file`: Single JSON map file.
-    - `-m/--multiple`: Multiple JSON map files (space-separated).
-    - `-d/--dir`: All .json files in a directory.
-    - `-r/--regex`: Files matching a glob pattern.
-
-    Also accepts `-o/--output` for the output directory (default: "outputs").
+    Uses custom parsing logic to handle nested sub-flags:
+    - `-i --file`, `-i --multiple`, `-i --directory`, `-i --regex` for input sources
+    - `-f --single`, `-f --multiline` for format options
 
     Returns:
-        Parsed argument namespace with file/multiple/dir/regex and output attributes.
+        Parsed argument namespace with input_mode, input_value, output,
+        and multiline attributes.
     """
     argument_parser = argparse.ArgumentParser(
         description="RPG Maker MV → Ren'Py Transpiler",
-        formatter_class=argparse.RawDescriptionHelpFormatter
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        usage=(
+            "rpgm-transpile -i (--file FILE | --multiple FILES... | --directory DIR | --regex PATTERN)\n"
+            "              [-o OUTPUT_DIR] [-f (--single | --multiline)]"
+        ),
     )
 
-    # Mutually exclusive group: exactly one input mode must be specified
-    input_mode_group = argument_parser.add_mutually_exclusive_group(required=True)
-    input_mode_group.add_argument(
-        "-f", "--file", metavar="FILE",
-        help="Transpile a single file"
+    # Input flag - required marker, actual sub-flag parsed manually
+    argument_parser.add_argument(
+        "-i", "--input",
+        action=InputAction,
+        dest="input_required",
+        help="Input source (required) - use with --file, --multiple, --directory, or --regex"
     )
-    input_mode_group.add_argument(
-        "-m", "--multiple", metavar="FILES", nargs="+",
-        help="Transpile multiple files"
+
+    # Register input sub-flags as optional arguments (parsed manually)
+    argument_parser.add_argument(
+        "--file", "-file",
+        metavar="FILE",
+        dest="file",
+        help="Transpile a single file (use with -i)"
     )
-    input_mode_group.add_argument(
-        "-d", "--dir", metavar="DIRECTORY",
-        help="Transpile all .json files in a directory"
+    argument_parser.add_argument(
+        "--multiple", "-multiple",
+        metavar="FILES",
+        nargs="+",
+        dest="multiple",
+        help="Transpile multiple files (use with -i)"
     )
-    input_mode_group.add_argument(
-        "-r", "--regex", metavar="PATTERN",
-        help="Transpile files matching a glob pattern (e.g., 'Map*.json')"
+    argument_parser.add_argument(
+        "--directory", "-directory",
+        metavar="DIR",
+        dest="directory",
+        help="Transpile all .json files in a directory (use with -i)"
+    )
+    argument_parser.add_argument(
+        "--regex", "-regex",
+        metavar="PATTERN",
+        dest="regex",
+        help="Transpile files matching a glob pattern (use with -i)"
     )
 
     # Output directory option (defaults to "outputs")
     argument_parser.add_argument(
-        "-o", "--output", metavar="OUTPUT_DIR",
+        "-o", "--output",
+        metavar="OUTPUT_DIR",
         default="outputs",
         help="Output directory for generated .rpy files (default: outputs)"
     )
 
-    # Multiline dialog format option
+    # Format flag - parsed manually for --single/--multiline sub-options
     argument_parser.add_argument(
-        "-l", "--multiline",
+        "-f", "--format",
+        action=FormatAction,
+        dest="format_specified",
+        help="Format options (--single or --multiline)"
+    )
+
+    # Format sub-flags (parsed manually)
+    argument_parser.add_argument(
+        "--single",
         action="store_true",
+        dest="single",
+        default=False,
+        help="Emit single-line dialogue (default)"
+    )
+    argument_parser.add_argument(
+        "--multiline",
+        action="store_true",
+        dest="multiline",
         default=False,
         help="Emit multi-line dialogue as Ren'Py triple-quoted strings"
     )
 
-    return argument_parser.parse_args()
+    # Parse arguments
+    args = argument_parser.parse_args()
+
+    # Validate input mode requirements
+    if not getattr(args, "input_required", False):
+        argument_parser.error("Input source is required. Use -i with --file, --multiple, --directory, or --regex.")
+
+    # Count how many input modes were specified
+    input_modes = [
+        args.file is not None,
+        args.multiple is not None,
+        args.directory is not None,
+        args.regex is not None,
+    ]
+    input_mode_count = sum(input_modes)
+
+    if input_mode_count == 0:
+        argument_parser.error(
+            "No input source specified after -i. Use --file, --multiple, --directory, or --regex."
+        )
+    elif input_mode_count > 1:
+        argument_parser.error(
+            "Only one input source can be specified: --file, --multiple, --directory, or --regex."
+        )
+
+    # Validate format sub-options
+    format_specified = getattr(args, "format_specified", False)
+    if args.single and args.multiline:
+        argument_parser.error("Cannot specify both --single and --multiline together.")
+
+    # Determine multiline setting (default: single-line)
+    args.multiline = args.multiline if (format_specified and args.multiline) else False
+
+    return args
 
 
 def collect_paths(cli_args: argparse.Namespace) -> list[str]:
@@ -105,14 +224,14 @@ def collect_paths(cli_args: argparse.Namespace) -> list[str]:
     """
     resolved_paths: list[str] = []
 
-    # Mode: single file (-f/--file)
+    # Mode: single file (--file)
     if cli_args.file:
         if not os.path.isfile(cli_args.file):
             print(f"Error: File not found: {cli_args.file}")
             sys.exit(1)
         resolved_paths.append(cli_args.file)
 
-    # Mode: multiple files (-m/--multiple)
+    # Mode: multiple files (--multiple)
     elif cli_args.multiple:
         for file_path in cli_args.multiple:
             if not os.path.isfile(file_path):
@@ -120,16 +239,16 @@ def collect_paths(cli_args: argparse.Namespace) -> list[str]:
                 sys.exit(1)
             resolved_paths.append(file_path)
 
-    # Mode: directory (-d/--dir) — scan for .json files
-    elif cli_args.dir:
-        if not os.path.isdir(cli_args.dir):
-            print(f"Error: Directory not found: {cli_args.dir}")
+    # Mode: directory (--directory) — scan for .json files
+    elif cli_args.directory:
+        if not os.path.isdir(cli_args.directory):
+            print(f"Error: Directory not found: {cli_args.directory}")
             sys.exit(1)
-        for filename in sorted(os.listdir(cli_args.dir)):
+        for filename in sorted(os.listdir(cli_args.directory)):
             if filename.endswith(".json"):
-                resolved_paths.append(os.path.join(cli_args.dir, filename))
+                resolved_paths.append(os.path.join(cli_args.directory, filename))
 
-    # Mode: glob pattern (-r/--regex)
+    # Mode: glob pattern (--regex)
     elif cli_args.regex:
         pattern_matches = glob.glob(cli_args.regex)
         if not pattern_matches:
