@@ -83,12 +83,15 @@ def generate_switches_rpy(collector: DataCollector) -> str:
 
     Variable Naming Convention:
     All game state variables use snake_case with type prefixes:
-    - switch_{id}: Global switches (e.g., switch_5)
-    - var_{id}: Global variables (e.g., var_12)
+    - switch_{id}_{name}: Global switches (e.g., switch_278_guards_insulted)
+    - var_{id}_{name}: Global variables (e.g., var_2_claires_defiance)
     - selfswitch_{event_id}_{channel}: Self-switches (e.g., selfswitch_5_A)
     - item_{id}: Item quantities (e.g., item_3)
     - gold: Player currency
     - quest_log: Quest tracking list
+    
+    When System.json is available, switch and variable names are concatenated
+    with their human-readable names for improved code readability.
 
     Args:
         collector: DataCollector instance populated with switch/variable/item data.
@@ -137,9 +140,13 @@ def generate_switches_rpy(collector: DataCollector) -> str:
         
         # Iterate over switches in sorted order for consistent output
         for switch_id in sorted(collector.switch_ids):
+            # Get the concatenated variable name (switch_{id}_{name})
+            # Uses System.json names if available
+            variable_name = collector.get_switch_name(switch_id)
+            
             # Initialize each switch to False (OFF state)
             # In RPG Maker, switches default to OFF when a new game starts
-            output_lines.append(f"    switch_{switch_id} = False")
+            output_lines.append(f"    {variable_name} = False")
         
         # Add a blank line for readability
         output_lines.append("")
@@ -151,9 +158,13 @@ def generate_switches_rpy(collector: DataCollector) -> str:
         
         # Iterate over variables in sorted order for consistent output
         for variable_id in sorted(collector.variable_ids):
+            # Get the concatenated variable name (var_{id}_{name})
+            # Uses System.json names if available
+            variable_name = collector.get_variable_name(variable_id)
+            
             # Initialize each variable to 0
             # In RPG Maker, variables default to 0 when a new game starts
-            output_lines.append(f"    var_{variable_id} = 0")
+            output_lines.append(f"    {variable_name} = 0")
         
         # Add a blank line for readability
         output_lines.append("")

@@ -156,6 +156,36 @@ def transpile_to_renpy(
     # Create the shared data collector
     # This will accumulate references from all maps
     collector = DataCollector()
+    
+    # ═══════════════════════════════════════════════════════════════════
+    # PHASE 0b: Load System.json if available
+    # ═══════════════════════════════════════════════════════════════════
+    
+    # Check for System.json in the same directory as the first input file
+    # System.json contains switch/variable names for human-readable output
+    if input_paths:
+        # Get the directory of the first input file
+        input_dir = os.path.dirname(input_paths[0]) or "."
+        system_json_path = os.path.join(input_dir, "System.json")
+        
+        # Check if System.json exists
+        if os.path.exists(system_json_path):
+            try:
+                with open(system_json_path, "r", encoding="utf-8") as system_file:
+                    collector.system_data = json.load(system_file)
+                print(f"[INFO] Loaded System.json for switch/variable name resolution")
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"[WARN] Could not load System.json: {e}")
+        else:
+            # Also check in the workspace root if input_dir is different
+            root_system_path = os.path.join(".", "System.json")
+            if root_system_path != system_json_path and os.path.exists(root_system_path):
+                try:
+                    with open(root_system_path, "r", encoding="utf-8") as system_file:
+                        collector.system_data = json.load(system_file)
+                    print(f"[INFO] Loaded System.json for switch/variable name resolution")
+                except (json.JSONDecodeError, OSError) as e:
+                    print(f"[WARN] Could not load System.json: {e}")
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 1: Load JSON files and run data collection

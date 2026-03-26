@@ -178,3 +178,6 @@ No linter or formatter is configured (no ruff, flake8, black, mypy, etc.). If ad
 ### Documentation
 - Always document with detail every python function
 - Always document with detail every python statment (every line of code)
+
+### Consideration
+- Give me an descriptive git commit summary and description for every change or changes made in project after any modification in source code are made

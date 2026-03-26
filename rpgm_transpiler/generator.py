@@ -760,7 +760,7 @@ class RenPyGenerator:
                 continue
 
             # ── CONTROL_SWITCHES (code 121): Set global switches ──
-            # Emits: $ switch_{id} = True/False
+            # Emits: $ switch_{id}_{name} = True/False
             elif command_code == CMD["CONTROL_SWITCHES"]:
                 # Flush any pending text
                 self._flush_text()
@@ -774,10 +774,12 @@ class RenPyGenerator:
                 
                 # Emit assignment for each switch in the range
                 for switch_id in range(start_id, end_id + 1):
-                    self._emit(f"$ switch_{switch_id} = {renpy_value}")
+                    # Get the concatenated variable name (switch_{id}_{name})
+                    variable_name = self.collector.get_switch_name(switch_id)
+                    self._emit(f"$ {variable_name} = {renpy_value}")
 
             # ── CONTROL_VARIABLES (code 122): Modify variables ──
-            # Emits: $ var_{id} = value or $ var_{id} += value
+            # Emits: $ var_{id}_{name} = value or $ var_{id}_{name} += value
             elif command_code == CMD["CONTROL_VARIABLES"]:
                 # Flush any pending text
                 self._flush_text()
@@ -798,12 +800,14 @@ class RenPyGenerator:
                 
                 # Emit assignment for each variable in the range
                 for variable_id in range(start_id, end_id + 1):
+                    # Get the concatenated variable name (var_{id}_{name})
+                    variable_name = self.collector.get_variable_name(variable_id)
                     if operation_type == 0:
                         # Set operation: direct assignment
-                        self._emit(f"$ var_{variable_id} = {operand_value}")
+                        self._emit(f"$ {variable_name} = {operand_value}")
                     else:
                         # Other operations: compound assignment
-                        self._emit(f"$ var_{variable_id} {operator_symbol} {operand_value}")
+                        self._emit(f"$ {variable_name} {operator_symbol} {operand_value}")
 
             # ── CONTROL_SELF_SWITCH (code 123): Toggle event-local switch ──
             # Emits: $ selfswitch_{event_id}_{channel} = True/False
@@ -1267,7 +1271,9 @@ class RenPyGenerator:
             start_id, end_id, value = parameters[0], parameters[1], parameters[2]
             renpy_value = "True" if value == 0 else "False"
             for switch_id in range(start_id, end_id + 1):
-                self._emit(f"$ switch_{switch_id} = {renpy_value}")
+                # Get the concatenated variable name (switch_{id}_{name})
+                variable_name = self.collector.get_switch_name(switch_id)
+                self._emit(f"$ {variable_name} = {renpy_value}")
 
         # ── CONTROL_VARIABLES: Modify variables ──
         elif command_code == CMD["CONTROL_VARIABLES"]:
@@ -1276,10 +1282,12 @@ class RenPyGenerator:
             operand_value = parameters[3]
             operator_map = {0: "=", 1: "+=", 2: "-=", 3: "*=", 4: "//=", 5: "%="}
             for variable_id in range(start_id, end_id + 1):
+                # Get the concatenated variable name (var_{id}_{name})
+                variable_name = self.collector.get_variable_name(variable_id)
                 if operation_type == 0:
-                    self._emit(f"$ var_{variable_id} = {operand_value}")
+                    self._emit(f"$ {variable_name} = {operand_value}")
                 else:
-                    self._emit(f"$ var_{variable_id} {operator_map.get(operation_type, '=')} {operand_value}")
+                    self._emit(f"$ {variable_name} {operator_map.get(operation_type, '=')} {operand_value}")
 
         # ── CONTROL_SELF_SWITCH: Toggle self-switch ──
         elif command_code == CMD["CONTROL_SELF_SWITCH"]:
@@ -1356,20 +1364,26 @@ class RenPyGenerator:
         # Condition type 1: First global switch must be ON
         if conditions.get("switch1Valid"):
             switch_id = conditions["switch1Id"]
+            # Get the concatenated variable name (switch_{id}_{name})
+            variable_name = self.collector.get_switch_name(switch_id)
             # Check if switch is True (ON)
-            condition_checks.append(f"switch_{switch_id}")
+            condition_checks.append(variable_name)
 
         # Condition type 2: Second global switch must be ON
         if conditions.get("switch2Valid"):
             switch_id = conditions["switch2Id"]
-            condition_checks.append(f"switch_{switch_id}")
+            # Get the concatenated variable name (switch_{id}_{name})
+            variable_name = self.collector.get_switch_name(switch_id)
+            condition_checks.append(variable_name)
 
         # Condition type 3: Variable must meet threshold
         if conditions.get("variableValid"):
             variable_id = conditions["variableId"]
             threshold_value = conditions["variableValue"]
+            # Get the concatenated variable name (var_{id}_{name})
+            variable_name = self.collector.get_variable_name(variable_id)
             # Check if variable >= threshold
-            condition_checks.append(f"var_{variable_id} >= {threshold_value}")
+            condition_checks.append(f"{variable_name} >= {threshold_value}")
 
         # Condition type 4: Self-switch must be ON
         if conditions.get("selfSwitchValid"):
@@ -1432,13 +1446,16 @@ class RenPyGenerator:
             switch_id = parameters[1]
             expected_value = parameters[2]
             
+            # Get the concatenated variable name (switch_{id}_{name})
+            variable_name = self.collector.get_switch_name(switch_id)
+            
             # Build the condition expression
             if expected_value == 0:
                 # Expected ON: switch is True
-                return f"switch_{switch_id}"
+                return variable_name
             else:
                 # Expected OFF: switch is False (use "not")
-                return f"not switch_{switch_id}"
+                return f"not {variable_name}"
 
         # ── Condition type 1: Variable comparison ──
         elif condition_type == 1:
@@ -1451,8 +1468,11 @@ class RenPyGenerator:
             comparison_map = {0: "==", 1: ">=", 2: "<=", 3: ">", 4: "<", 5: "!="}
             comparison_operator = comparison_map.get(comparison_type, "==")
             
+            # Get the concatenated variable name (var_{id}_{name})
+            variable_name = self.collector.get_variable_name(variable_id)
+            
             # Build the condition expression
-            return f"var_{variable_id} {comparison_operator} {comparison_value}"
+            return f"{variable_name} {comparison_operator} {comparison_value}"
 
         # ── Condition type 2: Self-switch check ──
         elif condition_type == 2:

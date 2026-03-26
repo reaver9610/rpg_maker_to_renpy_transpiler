@@ -161,6 +161,169 @@ class DataCollector:
         # Map names: map_id → display_name for readable navigation labels
         # Used by generate_game_flow_rpy() to comment map labels with names
         self.map_names: dict[int, str] = {}
+        
+        # System.json data: global game configuration for name resolution
+        # Contains switches, variables, terms, and other system settings
+        # Loaded from System.json if available in the project directory
+        self.system_data: dict | None = None
+
+    @staticmethod
+    def _sanitize_name_for_variable(name: str) -> str:
+        """Convert a human-readable name to a safe Python variable suffix.
+
+        Transforms names like "Camp entry obtained" or "M: Find the purse"
+        into snake_case identifiers suitable for concatenating to variable names.
+
+        Transformation Steps:
+        1. Convert to lowercase
+        2. Remove/replace special characters (colons, dashes, apostrophes, etc.)
+        3. Replace spaces with underscores
+        4. Collapse consecutive underscores
+        5. Strip leading/trailing underscores
+
+        Args:
+            name: Human-readable name from System.json.
+                Example: "Camp entry obtained", "M: Find the purse"
+
+        Returns:
+            Sanitized snake_case string for variable name concatenation.
+            Example: "camp_entry_obtained", "m_find_the_purse"
+
+        Example:
+            >>> DataCollector._sanitize_name_for_variable("Camp entry obtained")
+            'camp_entry_obtained'
+            >>> DataCollector._sanitize_name_for_variable("M: Find the purse")
+            'm_find_the_purse'
+            >>> DataCollector._sanitize_name_for_variable("S: Guard Blowjob")
+            's_guard_blowjob'
+            >>> DataCollector._sanitize_name_for_variable("Claire's Defiance")
+            'claires_defiance'
+        """
+        # Step 1: Convert to lowercase
+        name = name.lower()
+        
+        # Step 2: Replace special characters with underscores
+        # Handle common patterns: colons, apostrophes, dashes, parentheses, ampersands, hashes
+        name = name.replace("'", "")  # Remove apostrophes (claire's → claires)
+        name = name.replace('"', '')  # Remove quotes
+        name = re.sub(r'[:\-\(\)&#]', '_', name)  # Replace special chars with underscore
+        
+        # Step 3: Replace remaining non-alphanumeric chars with underscores
+        name = re.sub(r'[^a-z0-9_]', '_', name)
+        
+        # Step 4: Collapse consecutive underscores into single underscore
+        name = re.sub(r'_+', '_', name)
+        
+        # Step 5: Strip leading/trailing underscores
+        name = name.strip('_')
+        
+        return name
+
+    def get_switch_name(self, switch_id: int) -> str:
+        """Get a concatenated variable name for a switch ID.
+
+        Returns a safe Ren'Py variable name combining the switch ID with
+        its human-readable name from System.json.
+
+        Format: switch_{id}_{sanitized_name}
+
+        Args:
+            switch_id: The numeric switch ID (1-based).
+
+        Returns:
+            Concatenated variable name suitable for Ren'Py.
+
+        Example:
+            >>> # With System.json loaded containing switches[278] = "Guards insulted"
+            >>> collector.get_switch_name(278)
+            'switch_278_guards_insulted'
+            >>> # Without System.json or unknown switch
+            >>> collector.get_switch_name(999)
+            'switch_999'
+        """
+        # Get the human-readable name from System.json if available
+        raw_name = self._get_switch_raw_name(switch_id)
+        
+        if raw_name:
+            # Sanitize the name for variable concatenation
+            sanitized = self._sanitize_name_for_variable(raw_name)
+            return f"switch_{switch_id}_{sanitized}"
+        else:
+            # Fallback: just use the ID without a name
+            return f"switch_{switch_id}"
+
+    def get_variable_name(self, variable_id: int) -> str:
+        """Get a concatenated variable name for a variable ID.
+
+        Returns a safe Ren'Py variable name combining the variable ID with
+        its human-readable name from System.json.
+
+        Format: var_{id}_{sanitized_name}
+
+        Args:
+            variable_id: The numeric variable ID (1-based).
+
+        Returns:
+            Concatenated variable name suitable for Ren'Py.
+
+        Example:
+            >>> # With System.json loaded containing variables[2] = "Claire's Defiance"
+            >>> collector.get_variable_name(2)
+            'var_2_claires_defiance'
+            >>> # Without System.json or unknown variable
+            >>> collector.get_variable_name(999)
+            'var_999'
+        """
+        # Get the human-readable name from System.json if available
+        raw_name = self._get_variable_raw_name(variable_id)
+        
+        if raw_name:
+            # Sanitize the name for variable concatenation
+            sanitized = self._sanitize_name_for_variable(raw_name)
+            return f"var_{variable_id}_{sanitized}"
+        else:
+            # Fallback: just use the ID without a name
+            return f"var_{variable_id}"
+
+    def _get_switch_raw_name(self, switch_id: int) -> str | None:
+        """Get the raw name of a switch from System.json.
+
+        Args:
+            switch_id: The numeric switch ID (1-based).
+
+        Returns:
+            The switch name from System.json, or None if not available.
+        """
+        if self.system_data is None:
+            return None
+        
+        switches = self.system_data.get("switches", [])
+        if 0 <= switch_id < len(switches):
+            name = switches[switch_id]
+            # Return name only if it's non-empty
+            return name if name else None
+        
+        return None
+
+    def _get_variable_raw_name(self, variable_id: int) -> str | None:
+        """Get the raw name of a variable from System.json.
+
+        Args:
+            variable_id: The numeric variable ID (1-based).
+
+        Returns:
+            The variable name from System.json, or None if not available.
+        """
+        if self.system_data is None:
+            return None
+        
+        variables = self.system_data.get("variables", [])
+        if 0 <= variable_id < len(variables):
+            name = variables[variable_id]
+            # Return name only if it's non-empty
+            return name if name else None
+        
+        return None
 
     def collect_from_map(self, map_data: dict[str, Any], map_id: int = 0) -> None:
         """Scan a single map's events to collect all referenced data.
