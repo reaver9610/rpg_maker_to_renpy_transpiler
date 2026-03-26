@@ -477,9 +477,11 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 6: Generate game_flow.rpy (navigation labels)
     # ═══════════════════════════════════════════════════════════════════
-    
+
     # Generate the game flow navigation
-    game_flow_source = generate_game_flow_rpy(all_map_data, collector, interlines=interlines)
+    # Apply interlines only if "game_flow" is in targets
+    game_flow_interlines = interlines if "game_flow" in interlines_targets else 0
+    game_flow_source = generate_game_flow_rpy(all_map_data, collector, interlines=game_flow_interlines)
     
     # Build the output file path
     game_flow_path = os.path.join(output_dir, "game_flow.rpy")

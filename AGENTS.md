@@ -83,6 +83,12 @@ rpgm-transpile -i --file inputs/Map001.json -f --multiline
   - `--regex PATTERN` - Transpile files matching a glob pattern
 - `-o, --output OUTPUT_DIR` - Output directory for generated .rpy files (default: outputs)
 - `-n, --interlines N` - Number of blank lines between each line in output (default: 0)
+  - `--maps` - Apply interlines to map files only (default when -n is used)
+  - `--characters` - Apply interlines to characters.rpy
+  - `--switches` - Apply interlines to switches.rpy
+  - `--side-images` - Apply interlines to side_images.rpy
+  - `--game-flow` - Apply interlines to game_flow.rpy
+  - `--all` - Apply interlines to all output files
 - `-f, --format` - Format options (use with one of the following sub-options):
   - `--single` - Emit single-line dialogue (default)
   - `--multiline` - Emit multi-line dialogue as Ren'Py triple-quoted strings
@@ -102,13 +108,40 @@ Test scripts are in `test_scripts/` directory:
 ./test_scripts/test_multiple_files.sh
 ./test_scripts/test_folder.sh
 ./test_scripts/test_regex.sh
+./test_scripts/test_interlines_default.sh
+./test_scripts/test_interlines_targets.sh
+./test_scripts/test_interlines_all.sh
+./test_scripts/test_multiline_format.sh
+./test_scripts/test_output_dir.sh
+./test_scripts/test_multiline_output.sh
 
 # Global mode (uses installed rpgm-transpile)
 ./test_scripts/test_single_file.sh --global
 ./test_scripts/test_multiple_files.sh --global
 ./test_scripts/test_folder.sh --global
 ./test_scripts/test_regex.sh --global
+./test_scripts/test_interlines_default.sh --global
+./test_scripts/test_interlines_targets.sh --global
+./test_scripts/test_interlines_all.sh --global
+./test_scripts/test_multiline_format.sh --global
+./test_scripts/test_output_dir.sh --global
+./test_scripts/test_multiline_output.sh --global
 ```
+
+#### Test Scripts Overview
+
+| Script | Purpose |
+|--------|---------|
+| `test_single_file.sh` | Single file input with `-i --file` |
+| `test_multiple_files.sh` | Multiple files input with `-i --multiple` |
+| `test_folder.sh` | Directory input with `-i --directory` |
+| `test_regex.sh` | Glob pattern input with `-i --regex` |
+| `test_interlines_default.sh` | Test `-n 2` (defaults to maps) |
+| `test_interlines_targets.sh` | Test `-n 1 --characters --switches` |
+| `test_interlines_all.sh` | Test `-n 1 --all` flag |
+| `test_multiline_format.sh` | Test `-f --multiline` format |
+| `test_output_dir.sh` | Test custom output directory `-o` |
+| `test_multiline_output.sh` | Test combined options: multiline + custom output + interlines |
 
 ### Manual Verification
 To verify changes manually:
