@@ -82,6 +82,7 @@ rpgm-transpile -i --file inputs/Map001.json -f --multiline
   - `--directory DIR` - Transpile all `.json` files in a directory
   - `--regex PATTERN` - Transpile files matching a glob pattern
 - `-o, --output OUTPUT_DIR` - Output directory for generated .rpy files (default: outputs)
+- `-n, --interlines N` - Number of blank lines between each line in output (default: 0)
 - `-f, --format` - Format options (use with one of the following sub-options):
   - `--single` - Emit single-line dialogue (default)
   - `--multiline` - Emit multi-line dialogue as Ren'Py triple-quoted strings

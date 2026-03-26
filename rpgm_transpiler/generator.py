@@ -102,6 +102,7 @@ class RenPyGenerator:
         map_id: int = 0,
         all_map_data: dict[int, dict[str, Any]] | None = None,
         multiline: bool = False,
+        interlines: int = 0,
     ) -> None:
         """Initialize the generator with map data and shared metadata.
 
@@ -123,8 +124,10 @@ class RenPyGenerator:
             all_map_data: All parsed maps, keyed by map ID.
                 Used for cross-map references (transfer targets).
                 If None, the generator cannot resolve transfer target names.
-            multiline: If True, emit multi-line dialogue as Ren'Py triple-quoted strings.
-                Otherwise, concatenate TEXT_LINE commands into single dialogue lines.
+        multiline: If True, emit multi-line dialogue as Ren'Py triple-quoted strings.
+        Otherwise, concatenate TEXT_LINE commands into single dialogue lines.
+        interlines: Number of blank lines to insert between each output line.
+        Default 0 means no extra spacing.
 
         Example:
             >>> collector = DataCollector()
@@ -152,6 +155,11 @@ class RenPyGenerator:
         # True: emit dialogue as triple-quoted strings
         # False: emit dialogue as single lines (TEXT_LINE concatenation)
         self.multiline = multiline
+
+        # Store the interlines count
+        # Number of blank lines to insert between each output line
+        # 0 = default (no extra spacing), 1 = single blank line between lines, etc.
+        self.interlines = interlines
         
         # Initialize the output buffer
         # All generated Ren'Py lines are appended here
@@ -308,7 +316,15 @@ class RenPyGenerator:
         
         # Step 3: Join all lines with newlines and return
         # This produces the final .rpy file content
-        return "\n".join(self.lines)
+        # If interlines > 0, insert that many blank lines between each line
+        if self.interlines > 0:
+            # Create separator with interlines blank lines plus one newline
+            # interlines=1 means "\n\n" (one blank line between content)
+            separator = "\n" * (self.interlines + 1)
+            return separator.join(self.lines)
+        else:
+            # Default behavior: single newline between lines
+            return "\n".join(self.lines)
 
     def _emit_header(self) -> None:
         """Write the file header comment block.

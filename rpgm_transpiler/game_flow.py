@@ -58,6 +58,7 @@ from .collector import DataCollector
 def generate_game_flow_rpy(
     all_map_data: dict[int, dict],
     collector: DataCollector,
+    interlines: int = 0,
 ) -> str:
     """Generate game_flow.rpy that handles map navigation and entry points.
 
@@ -86,11 +87,13 @@ def generate_game_flow_rpy(
 
     Args:
         all_map_data: Maps map_id → parsed JSON data for each transpiled map.
-            Used to get display names for comments.
+        Used to get display names for comments.
         collector: DataCollector instance with map name metadata.
-            Used to retrieve display names for map IDs.
+        Used to retrieve display names for map IDs.
+        interlines: Number of blank lines to insert between each output line.
+        Default 0 means no extra spacing.
 
-    Returns:
+        Returns:
         Complete .rpy source string for game_flow.rpy.
         Ready to be written to a file.
 
@@ -163,8 +166,13 @@ def generate_game_flow_rpy(
         # Emit the return statement
         output_lines.append("    return")
         
-        # Add a blank line for readability
-        output_lines.append("")
+    # Add a blank line for readability
+    output_lines.append("")
 
     # Join all lines with newlines and return
-    return "\n".join(output_lines)
+    # If interlines > 0, insert that many blank lines between each line
+    if interlines > 0:
+        separator = "\n" * (interlines + 1)
+        return separator.join(output_lines)
+    else:
+        return "\n".join(output_lines)

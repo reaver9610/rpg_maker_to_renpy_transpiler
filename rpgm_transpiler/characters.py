@@ -111,7 +111,7 @@ def _get_character_color(face_name: str) -> str:
         return "#ffffff"
 
 
-def generate_characters_rpy(collector: DataCollector) -> str:
+def generate_characters_rpy(collector: DataCollector, interlines: int = 0) -> str:
     """Generate characters.rpy with Ren'Py Character definitions.
 
     Creates a .rpy file containing `define` statements for every character
@@ -130,11 +130,13 @@ def generate_characters_rpy(collector: DataCollector) -> str:
 
     Args:
         collector: DataCollector instance populated with character data.
-            Required attributes:
-            - characters: dict mapping face_name → display_name
-            - character_face_ids: dict mapping face_name → set of face IDs
+        Required attributes:
+        - characters: dict mapping face_name → display_name
+        - character_face_ids: dict mapping face_name → set of face IDs
+        interlines: Number of blank lines to insert between each output line.
+        Default 0 means no extra spacing.
 
-    Returns:
+        Returns:
         Complete .rpy source string for characters.rpy.
         Ready to be written to a file.
 
@@ -208,6 +210,11 @@ def generate_characters_rpy(collector: DataCollector) -> str:
 
     # Add trailing newline
     output_lines.append("")
-    
+
     # Join all lines with newlines and return
-    return "\n".join(output_lines)
+    # If interlines > 0, insert that many blank lines between each line
+    if interlines > 0:
+        separator = "\n" * (interlines + 1)
+        return separator.join(output_lines)
+    else:
+        return "\n".join(output_lines)

@@ -66,7 +66,7 @@ Output File Structure:
 from .collector import DataCollector
 
 
-def generate_switches_rpy(collector: DataCollector) -> str:
+def generate_switches_rpy(collector: DataCollector, interlines: int = 0) -> str:
     """Generate switches.rpy with default game state variable declarations.
 
     Creates a .rpy file containing `init python:` assignments for every
@@ -95,13 +95,15 @@ def generate_switches_rpy(collector: DataCollector) -> str:
 
     Args:
         collector: DataCollector instance populated with switch/variable/item data.
-            Required attributes:
-            - switch_ids: set of global switch IDs
-            - variable_ids: set of global variable IDs
-            - self_switches: set of (event_id, channel) tuples
-            - item_ids: set of item IDs
+        Required attributes:
+        - switch_ids: set of global switch IDs
+        - variable_ids: set of global variable IDs
+        - self_switches: set of (event_id, channel) tuples
+        - item_ids: set of item IDs
+        interlines: Number of blank lines to insert between each output line.
+        Default 0 means no extra spacing.
 
-    Returns:
+        Returns:
         Complete .rpy source string for switches.rpy.
         Ready to be written to a file.
 
@@ -220,4 +222,9 @@ def generate_switches_rpy(collector: DataCollector) -> str:
     output_lines.append("")
 
     # Join all lines with newlines and return
-    return "\n".join(output_lines)
+    # If interlines > 0, insert that many blank lines between each line
+    if interlines > 0:
+        separator = "\n" * (interlines + 1)
+        return separator.join(output_lines)
+    else:
+        return "\n".join(output_lines)

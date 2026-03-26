@@ -77,6 +77,7 @@ def transpile_to_renpy(
     input_paths: list[str],
     output_dir: str = "outputs",
     multiline: bool = False,
+    interlines: int = 0,
 ) -> None:
     """Transpile one or more RPG Maker MV JSON maps to Ren'Py .rpy scripts.
 
@@ -105,11 +106,13 @@ def transpile_to_renpy(
 
     Args:
         input_paths: List of filesystem paths to RPG Maker MV .json map files.
-            Each file should be a valid RPG Maker MV map export (Map*.json).
+        Each file should be a valid RPG Maker MV map export (Map*.json).
         output_dir: Directory to write generated .rpy files.
-            Created if it doesn't exist. Defaults to "outputs".
+        Created if it doesn't exist. Defaults to "outputs".
         multiline: If True, emit multi-line dialogue as Ren'Py triple-quoted strings.
-            If False (default), concatenate TEXT_LINE commands into single lines.
+        If False (default), concatenate TEXT_LINE commands into single lines.
+        interlines: Number of blank lines to insert between each line in the output.
+        Default 0 means no extra spacing. Use 1 for single blank line between lines, etc.
 
     Example:
         >>> transpile_to_renpy(["inputs/Map001.json"], "renpy_output/")
@@ -233,7 +236,7 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     
     # Generate the character definitions
-    character_definitions = generate_characters_rpy(collector)
+    character_definitions = generate_characters_rpy(collector, interlines=interlines)
     
     # Build the output file path
     characters_path = os.path.join(output_dir, "characters.rpy")
@@ -250,7 +253,7 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     
     # Generate the switch/variable definitions
-    switch_definitions = generate_switches_rpy(collector)
+    switch_definitions = generate_switches_rpy(collector, interlines=interlines)
     
     # Build the output file path
     switches_path = os.path.join(output_dir, "switches.rpy")
@@ -267,7 +270,7 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     
     # Generate the side image declarations
-    side_images_definitions = generate_side_images_rpy(collector)
+    side_images_definitions = generate_side_images_rpy(collector, interlines=interlines)
     
     # Build the output file path
     side_images_path = os.path.join(output_dir, "side_images.rpy")
@@ -292,8 +295,9 @@ def transpile_to_renpy(
         # - map_id: The numeric ID of this map
         # - all_map_data: All maps (for cross-map transfer references)
         # - multiline: Whether to emit triple-quoted strings
+        # - interlines: Number of blank lines between output lines
         generator = RenPyGenerator(
-            map_data, collector, map_id, all_map_data, multiline=multiline
+            map_data, collector, map_id, all_map_data, multiline=multiline, interlines=interlines
         )
         
         # Generate the Ren'Py source
@@ -326,7 +330,7 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     
     # Generate the game flow navigation
-    game_flow_source = generate_game_flow_rpy(all_map_data, collector)
+    game_flow_source = generate_game_flow_rpy(all_map_data, collector, interlines=interlines)
     
     # Build the output file path
     game_flow_path = os.path.join(output_dir, "game_flow.rpy")

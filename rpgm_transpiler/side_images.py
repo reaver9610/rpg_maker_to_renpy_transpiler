@@ -43,7 +43,7 @@ from .collector import DataCollector
 from .helpers import side_image_tag
 
 
-def generate_side_images_rpy(collector: DataCollector) -> str:
+def generate_side_images_rpy(collector: DataCollector, interlines: int = 0) -> str:
     """Generate side_images.rpy with Ren'Py side image declarations.
 
     Creates a .rpy file containing `image side` statements for every
@@ -79,10 +79,12 @@ def generate_side_images_rpy(collector: DataCollector) -> str:
 
     Args:
         collector: DataCollector instance populated with character and face ID data.
-            Required attributes:
-            - character_face_ids: dict mapping face_name → set of face IDs
+        Required attributes:
+        - character_face_ids: dict mapping face_name → set of face IDs
+        interlines: Number of blank lines to insert between each output line.
+        Default 0 means no extra spacing.
 
-    Returns:
+        Returns:
         Complete .rpy source string for side_images.rpy.
         Ready to be written to a file.
 
@@ -149,8 +151,13 @@ def generate_side_images_rpy(collector: DataCollector) -> str:
                 f'image side {tag} {face_id} = "side_images/{safe_name}_{face_id}.png"'
             )
         
-        # Add a blank line between characters for readability
-        output_lines.append("")
+    # Add a blank line between characters for readability
+    output_lines.append("")
 
     # Join all lines with newlines and return
-    return "\n".join(output_lines)
+    # If interlines > 0, insert that many blank lines between each line
+    if interlines > 0:
+        separator = "\n" * (interlines + 1)
+        return separator.join(output_lines)
+    else:
+        return "\n".join(output_lines)

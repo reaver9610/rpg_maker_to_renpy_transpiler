@@ -99,7 +99,7 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         usage=(
             "rpgm-transpile -i (--file FILE | --multiple FILES... | --directory DIR | --regex PATTERN)\n"
-            "              [-o OUTPUT_DIR] [-f (--single | --multiline)]"
+            " [-o OUTPUT_DIR] [-n N] [-f (--single | --multiline)]"
         ),
     )
 
@@ -144,6 +144,15 @@ def parse_args() -> argparse.Namespace:
         metavar="OUTPUT_DIR",
         default="outputs",
         help="Output directory for generated .rpy files (default: outputs)"
+    )
+
+    # Interlines option (number of blank lines between each output line)
+    argument_parser.add_argument(
+        "-n", "--interlines",
+        metavar="N",
+        type=int,
+        default=0,
+        help="Number of blank lines between each line in output (default: 0)"
     )
 
     # Format flag - parsed manually for --single/--multiline sub-options
@@ -265,14 +274,16 @@ def collect_paths(cli_args: argparse.Namespace) -> list[str]:
 
 
 def main() -> None:
-    """CLI entry point for the RPG Maker MV to Ren'Py transpiler.
+    """CLI entry point for the RPG Maker MV to Ren\'Py transpiler.
 
     Parses arguments, resolves input paths, and invokes the main
     transpile_to_renpy pipeline.
     """
     cli_args = parse_args()
     resolved_paths = collect_paths(cli_args)
-    transpile_to_renpy(resolved_paths, cli_args.output, multiline=cli_args.multiline)
+    transpile_to_renpy(
+        resolved_paths, cli_args.output, multiline=cli_args.multiline, interlines=cli_args.interlines
+    )
 
 
 if __name__ == "__main__":
