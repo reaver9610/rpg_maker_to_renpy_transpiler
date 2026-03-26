@@ -79,6 +79,7 @@ def transpile_to_renpy(
     output_dir: str = "outputs",
     multiline: bool = False,
     interlines: int = 0,
+    interlines_targets: set[str] | None = None,
 ) -> None:
     """Transpile one or more RPG Maker MV JSON maps to Ren'Py .rpy scripts.
 
@@ -114,6 +115,10 @@ def transpile_to_renpy(
         If False (default), concatenate TEXT_LINE commands into single lines.
         interlines: Number of blank lines to insert between each line in the output.
         Default 0 means no extra spacing. Use 1 for single blank line between lines, etc.
+        interlines_targets: Set of file types to apply interlines to.
+        Valid values: "maps", "characters", "switches", "side_images", "game_flow".
+        If None and interlines > 0, defaults to {"maps"}.
+        If interlines == 0, this parameter is ignored.
 
     Example:
         >>> transpile_to_renpy(["inputs/Map001.json"], "renpy_output/")
@@ -148,7 +153,7 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 0: Setup
     # ═══════════════════════════════════════════════════════════════════
-    
+
     # Ensure the output directory exists
     # exist_ok=True means no error if the directory already exists
     os.makedirs(output_dir, exist_ok=True)
@@ -156,10 +161,15 @@ def transpile_to_renpy(
     # Initialize storage for parsed map data
     # Key: map_id (int), Value: parsed JSON dict
     all_map_data: dict[int, dict] = {}
-    
+
     # Create the shared data collector
     # This will accumulate references from all maps
     collector = DataCollector()
+
+    # Set default interlines_targets if not specified
+    # Default: apply interlines to maps only
+    if interlines_targets is None:
+        interlines_targets = {"maps"} if interlines > 0 else set()
     
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 0b: Load System.json if available
@@ -411,8 +421,12 @@ def transpile_to_renpy(
         # - all_map_data: All maps (for cross-map transfer references)
         # - multiline: Whether to emit triple-quoted strings
         # - interlines: Number of blank lines between output lines
+        # - map_name: Human-readable name from MapInfos.json (or None for fallback)
+        map_name_for_header = map_infos[map_id]["name"] if map_id in map_infos else None
         generator = RenPyGenerator(
-            map_data, collector, map_id, all_map_data, multiline=multiline, interlines=interlines
+            map_data, collector, map_id, all_map_data, 
+            multiline=multiline, interlines=interlines,
+            map_name=map_name_for_header
         )
         
         # Generate the Ren'Py source
@@ -437,8 +451,8 @@ def transpile_to_renpy(
             if map_id in map_infos:
                 map_name = to_title_case(map_infos[map_id]["name"])
             else:
-                # Fallback to display_name from map data
-                map_display_name = map_data.get("display_name", f"map_{map_id}")
+                # Fallback to displayName from map data
+                map_display_name = map_data.get("displayName", f"map_{map_id}")
                 map_name = re.sub(r"[^a-z0-9_]", "_", map_display_name.lower())
             
             # Build the full filename
@@ -448,7 +462,7 @@ def transpile_to_renpy(
             output_path = os.path.join(full_folder_path, output_filename)
         else:
             # Fallback to flat structure (no MapInfos.json loaded)
-            map_display_name = map_data.get("display_name", f"map_{map_id}")
+            map_display_name = map_data.get("displayName", f"map_{map_id}")
             safe_filename = re.sub(r"[^a-z0-9_]", "_", map_display_name.lower())
             output_filename = f"map_{map_id}_{safe_filename}.rpy"
             output_path = os.path.join(output_dir, output_filename)

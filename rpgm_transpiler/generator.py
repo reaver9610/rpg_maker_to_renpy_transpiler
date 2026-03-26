@@ -103,6 +103,7 @@ class RenPyGenerator:
         all_map_data: dict[int, dict[str, Any]] | None = None,
         multiline: bool = False,
         interlines: int = 0,
+        map_name: str | None = None,
     ) -> None:
         """Initialize the generator with map data and shared metadata.
 
@@ -114,7 +115,7 @@ class RenPyGenerator:
             map_data: Parsed JSON for this specific map.
                 Expected structure:
                 {
-                    "display_name": str,
+                    "displayName": str,
                     "events": [event_dict | null, ...]
                 }
             collector: Shared DataCollector with character/switch/variable metadata.
@@ -124,10 +125,13 @@ class RenPyGenerator:
             all_map_data: All parsed maps, keyed by map ID.
                 Used for cross-map references (transfer targets).
                 If None, the generator cannot resolve transfer target names.
-        multiline: If True, emit multi-line dialogue as Ren'Py triple-quoted strings.
-        Otherwise, concatenate TEXT_LINE commands into single dialogue lines.
-        interlines: Number of blank lines to insert between each output line.
-        Default 0 means no extra spacing.
+            multiline: If True, emit multi-line dialogue as Ren'Py triple-quoted strings.
+                Otherwise, concatenate TEXT_LINE commands into single dialogue lines.
+            interlines: Number of blank lines to insert between each output line.
+                Default 0 means no extra spacing.
+            map_name: Human-readable name for this map (from MapInfos.json).
+                If None, falls back to displayName from map_data or "Unknown".
+                Used in file header comments.
 
         Example:
             >>> collector = DataCollector()
@@ -160,6 +164,10 @@ class RenPyGenerator:
         # Number of blank lines to insert between each output line
         # 0 = default (no extra spacing), 1 = single blank line between lines, etc.
         self.interlines = interlines
+
+        # Store the map name for use in header comments
+        # Priority: provided map_name > displayName from map_data > "Unknown"
+        self.map_name = map_name or map_data.get("displayName", "Unknown")
         
         # Initialize the output buffer
         # All generated Ren'Py lines are appended here
@@ -341,9 +349,9 @@ class RenPyGenerator:
 
         The double-line characters (═) visually separate the header from content.
         """
-        # Get the map's display name from the JSON data
-        # Fallback to "Unknown" if not present
-        map_name = self.map_data.get("display_name", "Unknown")
+        # Use the map name stored during initialization
+        # Priority: provided map_name > displayName from map_data > "Unknown"
+        map_name = self.map_name
         
         # Emit the top border
         self._emit("# ═══════════════════════════════════════════════════")

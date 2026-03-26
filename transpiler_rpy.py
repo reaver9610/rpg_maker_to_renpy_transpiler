@@ -155,6 +155,50 @@ def parse_args() -> argparse.Namespace:
         help="Number of blank lines between each line in output (default: 0)"
     )
 
+    # Interlines target flags (which files to apply interlines to)
+    argument_parser.add_argument(
+        "--maps",
+        action="store_true",
+        dest="interlines_maps",
+        default=False,
+        help="Apply interlines to map files (default when -n is used)"
+    )
+    argument_parser.add_argument(
+        "--characters",
+        action="store_true",
+        dest="interlines_characters",
+        default=False,
+        help="Apply interlines to characters.rpy"
+    )
+    argument_parser.add_argument(
+        "--switches",
+        action="store_true",
+        dest="interlines_switches",
+        default=False,
+        help="Apply interlines to switches.rpy"
+    )
+    argument_parser.add_argument(
+        "--side-images",
+        action="store_true",
+        dest="interlines_side_images",
+        default=False,
+        help="Apply interlines to side_images.rpy"
+    )
+    argument_parser.add_argument(
+        "--game-flow",
+        action="store_true",
+        dest="interlines_game_flow",
+        default=False,
+        help="Apply interlines to game_flow.rpy"
+    )
+    argument_parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="interlines_all",
+        default=False,
+        help="Apply interlines to all output files"
+    )
+
     # Format flag - parsed manually for --single/--multiline sub-options
     argument_parser.add_argument(
         "-f", "--format",
@@ -211,6 +255,39 @@ def parse_args() -> argparse.Namespace:
 
     # Determine multiline setting (default: single-line)
     args.multiline = args.multiline if (format_specified and args.multiline) else False
+
+    # Build interlines_targets set based on flags
+    # If --all is specified, apply to all files
+    # If no specific flags but -n is used, default to maps only
+    # If specific flags are used, apply only to those targets
+    interlines_targets: set[str] = set()
+        
+    if getattr(args, "interlines_all", False):
+        # --all: apply to all file types
+        interlines_targets = {"maps", "characters", "switches", "side_images", "game_flow"}
+    elif args.interlines > 0:
+        # -n was used, check for specific targets
+        if (getattr(args, "interlines_maps", False) or
+            getattr(args, "interlines_characters", False) or
+            getattr(args, "interlines_switches", False) or
+            getattr(args, "interlines_side_images", False) or
+            getattr(args, "interlines_game_flow", False)):
+            # Specific targets specified, use those
+            if getattr(args, "interlines_maps", False):
+                interlines_targets.add("maps")
+            if getattr(args, "interlines_characters", False):
+                interlines_targets.add("characters")
+            if getattr(args, "interlines_switches", False):
+                interlines_targets.add("switches")
+            if getattr(args, "interlines_side_images", False):
+                interlines_targets.add("side_images")
+            if getattr(args, "interlines_game_flow", False):
+                interlines_targets.add("game_flow")
+        else:
+            # No specific targets, default to maps only
+            interlines_targets = {"maps"}
+    
+    args.interlines_targets = interlines_targets
 
     return args
 
@@ -286,7 +363,11 @@ def main() -> None:
     cli_args = parse_args()
     resolved_paths = collect_paths(cli_args)
     transpile_to_renpy(
-        resolved_paths, cli_args.output, multiline=cli_args.multiline, interlines=cli_args.interlines
+        resolved_paths,
+        cli_args.output,
+        multiline=cli_args.multiline,
+        interlines=cli_args.interlines,
+        interlines_targets=cli_args.interlines_targets,
     )
 
 

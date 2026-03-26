@@ -135,7 +135,7 @@ def generate_game_flow_rpy(
     # This makes it easy for designers to change the starting map
     for map_id in sorted(all_map_data.keys()):
         # Get the map's display name for the comment
-        map_name = all_map_data[map_id].get("display_name", f"Map {map_id}")
+        map_name = all_map_data[map_id].get("displayName", f"Map {map_id}")
         # Emit the commented-out jump statement with map name
         output_lines.append(f"    # jump map_{map_id}_enter  # {map_name}")
     
@@ -151,7 +151,7 @@ def generate_game_flow_rpy(
     # Generate an entry label for each map
     for map_id, map_data in sorted(all_map_data.items()):
         # Get the map's display name
-        map_name = map_data.get("display_name", f"Map {map_id}")
+        map_name = map_data.get("displayName", f"Map {map_id}")
         
         # Emit the map entry label
         output_lines.append(f"label map_{map_id}_enter:")

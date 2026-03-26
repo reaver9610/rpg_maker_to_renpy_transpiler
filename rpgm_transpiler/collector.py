@@ -361,7 +361,7 @@ class DataCollector:
         # Step 1: Record the map's display name for game flow generation
         # The display_name is used in game_flow.rpy comments to identify maps
         # If missing, we fall back to "Map{id}"
-        display_name = map_data.get("display_name", f"Map{map_id}")
+        display_name = map_data.get("displayName", f"Map{map_id}")
         
         # Store the name mapping for later use in generate_game_flow_rpy()
         self.map_names[map_id] = display_name
