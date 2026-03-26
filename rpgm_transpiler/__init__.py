@@ -60,6 +60,7 @@ from .characters import generate_characters_rpy
 from .switches import generate_switches_rpy
 from .game_flow import generate_game_flow_rpy
 from .side_images import generate_side_images_rpy
+from .helpers import to_title_case
 
 
 __all__ = [
@@ -191,6 +192,120 @@ def transpile_to_renpy(
                     print(f"[WARN] Could not load System.json: {e}")
 
     # ═══════════════════════════════════════════════════════════════════
+    # PHASE 0c: Load MapInfos.json if available
+    # ═══════════════════════════════════════════════════════════════════
+    
+    # MapInfos.json contains map hierarchy information (parent-child relationships)
+    # This is used to create a hierarchical folder structure for map files
+    map_infos: dict[int, dict] = {}  # map_id -> {name, parentId, order}
+    map_folder_paths: dict[int, str] = {}  # map_id -> folder path
+    
+    # Check for MapInfos.json in the same directory as the first input file
+    if input_paths:
+        input_dir = os.path.dirname(input_paths[0]) or "."
+        map_infos_path = os.path.join(input_dir, "MapInfos.json")
+        
+        # Check if MapInfos.json exists
+        if os.path.exists(map_infos_path):
+            try:
+                with open(map_infos_path, "r", encoding="utf-8") as map_infos_file:
+                    map_infos_list = json.load(map_infos_file)
+                    # Convert list to dictionary with map_id as key
+                    # MapInfos.json is a sparse array where index = map_id
+                    # Some entries may be null (index 0 is usually null)
+                    for map_info in map_infos_list:
+                        if map_info is not None:
+                            map_id = map_info.get("id")
+                            if map_id is not None:
+                                map_infos[map_id] = {
+                                    "name": map_info.get("name", f"map_{map_id}"),
+                                    "parentId": map_info.get("parentId", 0),
+                                    "order": map_info.get("order", 0)
+                                }
+                    print(f"[INFO] Loaded MapInfos.json with {len(map_infos)} maps for hierarchical folder structure")
+                    
+                    # Build folder paths for each map
+                    from .helpers import to_title_case, safe_var
+                    def get_folder_path(map_id: int) -> str:
+                        """Recursively build folder path from map hierarchy."""
+                        if map_id in map_folder_paths:
+                            return map_folder_paths[map_id]
+                        
+                        if map_id not in map_infos:
+                            # Map not found in MapInfos, use default
+                            map_folder_paths[map_id] = f"map_{map_id}"
+                            return map_folder_paths[map_id]
+                        
+                        map_info = map_infos[map_id]
+                        parent_id = map_info["parentId"]
+                        
+                        if parent_id == 0 or parent_id not in map_infos:
+                            # Root map or parent not in MapInfos
+                            folder_name = f"map_{map_id}_{to_title_case(map_info['name'])}"
+                            map_folder_paths[map_id] = folder_name
+                        else:
+                            # Child map - get parent path and append
+                            parent_path = get_folder_path(parent_id)
+                            folder_name = f"map_{map_id}_{to_title_case(map_info['name'])}"
+                            map_folder_paths[map_id] = os.path.join(parent_path, folder_name)
+                        
+                        return map_folder_paths[map_id]
+                    
+                    # Build paths for all maps
+                    for map_id in map_infos:
+                        get_folder_path(map_id)
+                    
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"[WARN] Could not load MapInfos.json: {e}")
+        else:
+            # Also check in the workspace root if input_dir is different
+            root_map_infos_path = os.path.join(".", "MapInfos.json")
+            if root_map_infos_path != map_infos_path and os.path.exists(root_map_infos_path):
+                try:
+                    with open(root_map_infos_path, "r", encoding="utf-8") as map_infos_file:
+                        map_infos_list = json.load(map_infos_file)
+                        for map_info in map_infos_list:
+                            if map_info is not None:
+                                map_id = map_info.get("id")
+                                if map_id is not None:
+                                    map_infos[map_id] = {
+                                        "name": map_info.get("name", f"map_{map_id}"),
+                                        "parentId": map_info.get("parentId", 0),
+                                        "order": map_info.get("order", 0)
+                                    }
+                        print(f"[INFO] Loaded MapInfos.json with {len(map_infos)} maps for hierarchical folder structure")
+                        
+                        # Build folder paths for each map
+                        from .helpers import to_title_case, safe_var
+                        def get_folder_path(map_id: int) -> str:
+                            """Recursively build folder path from map hierarchy."""
+                            if map_id in map_folder_paths:
+                                return map_folder_paths[map_id]
+                            
+                            if map_id not in map_infos:
+                                map_folder_paths[map_id] = f"map_{map_id}"
+                                return map_folder_paths[map_id]
+                            
+                            map_info = map_infos[map_id]
+                            parent_id = map_info["parentId"]
+                            
+                            if parent_id == 0 or parent_id not in map_infos:
+                                folder_name = f"map_{map_id}_{to_title_case(map_info['name'])}"
+                                map_folder_paths[map_id] = folder_name
+                            else:
+                                parent_path = get_folder_path(parent_id)
+                                folder_name = f"map_{map_id}_{to_title_case(map_info['name'])}"
+                                map_folder_paths[map_id] = os.path.join(parent_path, folder_name)
+                            
+                            return map_folder_paths[map_id]
+                        
+                        for map_id in map_infos:
+                            get_folder_path(map_id)
+                        
+                except (json.JSONDecodeError, OSError) as e:
+                    print(f"[WARN] Could not load MapInfos.json: {e}")
+
+    # ═══════════════════════════════════════════════════════════════════
     # PHASE 1: Load JSON files and run data collection
     # ═══════════════════════════════════════════════════════════════════
     
@@ -303,20 +418,40 @@ def transpile_to_renpy(
         # Generate the Ren'Py source
         map_script_source = generator.generate()
 
-        # Build the output filename
-        # Format: map_{id}_{sanitized_display_name}.rpy
-        # The display name provides context for humans reading the file
-        map_display_name = map_data.get("display_name", f"map_{map_id}")
-        
-        # Sanitize the display name for use in a filename
-        # Replace non-alphanumeric characters with underscores
-        safe_filename = re.sub(r"[^a-z0-9_]", "_", map_display_name.lower())
-        
-        # Build the full filename
-        output_filename = f"map_{map_id}_{safe_filename}.rpy"
-        
-        # Build the full output path
-        output_path = os.path.join(output_dir, output_filename)
+        # Build the output filename and folder structure
+        # If MapInfos.json was loaded, use hierarchical folder structure
+        # Otherwise, fall back to flat structure
+        if map_id in map_folder_paths:
+            # Use hierarchical folder structure
+            folder_path = map_folder_paths[map_id]
+            
+            # Create the maps base directory if it doesn't exist
+            maps_base_dir = os.path.join(output_dir, "maps")
+            os.makedirs(maps_base_dir, exist_ok=True)
+            
+            # Create the full folder path
+            full_folder_path = os.path.join(maps_base_dir, folder_path)
+            os.makedirs(full_folder_path, exist_ok=True)
+            
+            # Get map name from MapInfos for filename
+            if map_id in map_infos:
+                map_name = to_title_case(map_infos[map_id]["name"])
+            else:
+                # Fallback to display_name from map data
+                map_display_name = map_data.get("display_name", f"map_{map_id}")
+                map_name = re.sub(r"[^a-z0-9_]", "_", map_display_name.lower())
+            
+            # Build the full filename
+            output_filename = f"map_{map_id}_{map_name}.rpy"
+            
+            # Build the full output path
+            output_path = os.path.join(full_folder_path, output_filename)
+        else:
+            # Fallback to flat structure (no MapInfos.json loaded)
+            map_display_name = map_data.get("display_name", f"map_{map_id}")
+            safe_filename = re.sub(r"[^a-z0-9_]", "_", map_display_name.lower())
+            output_filename = f"map_{map_id}_{safe_filename}.rpy"
+            output_path = os.path.join(output_dir, output_filename)
 
         # Write the file
         with open(output_path, "w", encoding="utf-8") as output_file:

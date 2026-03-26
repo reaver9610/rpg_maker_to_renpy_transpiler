@@ -253,8 +253,10 @@ def collect_paths(cli_args: argparse.Namespace) -> list[str]:
         if not os.path.isdir(cli_args.directory):
             print(f"Error: Directory not found: {cli_args.directory}")
             sys.exit(1)
+        # Files to exclude from map processing (not map JSON files)
+        excluded_files = {"MapInfos.json", "System.json"}
         for filename in sorted(os.listdir(cli_args.directory)):
-            if filename.endswith(".json"):
+            if filename.endswith(".json") and filename not in excluded_files:
                 resolved_paths.append(os.path.join(cli_args.directory, filename))
 
     # Mode: glob pattern (--regex)
@@ -263,7 +265,9 @@ def collect_paths(cli_args: argparse.Namespace) -> list[str]:
         if not pattern_matches:
             print(f"Error: No files match pattern: {cli_args.regex}")
             sys.exit(1)
-        resolved_paths.extend(sorted(pattern_matches))
+        # Files to exclude from map processing (not map JSON files)
+        excluded_files = {"MapInfos.json", "System.json"}
+        resolved_paths.extend(sorted([p for p in pattern_matches if os.path.basename(p) not in excluded_files]))
 
     # Ensure at least one file was found
     if not resolved_paths:

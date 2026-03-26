@@ -362,3 +362,69 @@ def side_image_tag(face_name: str) -> str:
     # Removes any remaining special characters that would be invalid in tags
     # This is a defensive step to ensure the result is always valid
     return "".join(char for char in name if char.isalnum() or char == "_")
+
+
+def to_title_case(name: str) -> str:
+    """Convert a map name to title case for folder/file names.
+    
+    Converts map names to title case where the first letter of each word is capitalized.
+    This provides more readable folder names than all uppercase or all lowercase.
+    
+    Transformation Rules:
+    1. Replace underscores with spaces (for names that already have underscores)
+    2. Convert to title case (capitalize first letter of each word)
+    3. Replace spaces with underscores
+    4. Filter to only alphanumeric and underscore characters
+    5. Replace consecutive underscores with a single underscore
+    6. Ensure the result is valid for filesystem (starts with letter/underscore)
+    
+    Args:
+        name: Raw map name from MapInfos.json.
+            Examples: "VALOS", "Outer Valos", "The_Brugginwood"
+    
+    Returns:
+        Title case name safe for filesystem.
+        Examples: "Valos", "Outer_Valos", "The_Brugginwood"
+    
+    Example:
+        >>> to_title_case("VALOS")
+        'Valos'
+        >>> to_title_case("Outer Valos")
+        'Outer_Valos'
+        >>> to_title_case("The_Brugginwood")
+        'The_Brugginwood'
+    
+    Note:
+        This function preserves existing underscores and title casing.
+        If the name is already in title case, it will be unchanged.
+    """
+    # Step 1: Replace underscores with spaces for consistent processing
+    # This handles names like "The_Brugginwood" that already have underscores
+    name_with_spaces = name.replace("_", " ")
+    
+    # Step 2: Convert to title case
+    # This capitalizes the first letter of each word
+    title_cased = name_with_spaces.title()
+    
+    # Step 3: Replace spaces with underscores for filesystem compatibility
+    # Folders cannot have spaces in most filesystems
+    with_underscores = title_cased.replace(" ", "_")
+    
+    # Step 4: Filter to only alphanumeric and underscore characters
+    # Removes any special characters that would be invalid in folder names
+    # This matches the same pattern used in safe_var() for consistency
+    sanitized = "".join(char for char in with_underscores if char.isalnum() or char == "_")
+    
+    # Step 5: Replace consecutive underscores with a single underscore
+    # This handles cases where special characters were removed, leaving double underscores
+    # Example: "HOME & REFUGEE CAMP" -> "Home__Refugee_Camp" -> "Home_Refugee_Camp"
+    while "__" in sanitized:
+        sanitized = sanitized.replace("__", "_")
+    
+    # Step 6: Ensure the result is valid for filesystem
+    # Folder names should start with a letter or underscore, not a digit
+    # If it starts with a digit, prepend an underscore
+    if sanitized and sanitized[0].isdigit():
+        sanitized = f"_{sanitized}"
+    
+    return sanitized
