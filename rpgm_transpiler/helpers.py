@@ -428,3 +428,74 @@ def to_title_case(name: str) -> str:
         sanitized = f"_{sanitized}"
     
     return sanitized
+
+
+def join_with_interlines(lines: list[str], interlines: int) -> str:
+    """Join output lines with configurable blank-line spacing, skipping comments.
+
+    When interlines is 0, behaves like a standard ``"\\n".join(lines)``.
+    When interlines > 0, inserts that many blank lines between each pair of
+    **code** lines (non-comment, non-empty).  Comment lines (starting with
+    ``#``) and intentionally empty lines are kept compact — no extra spacing
+    is added around them.
+
+    This prevents the interlines option from inflating comment header blocks
+    or creating unnecessary gaps around structural blank lines.
+
+    Args:
+        lines: The output lines to join (code, comments, blanks).
+        interlines: Number of blank lines to insert between code lines.
+            ``0`` means standard single-newline join.
+            ``1`` means one blank line between code lines, etc.
+
+    Returns:
+        The final file content as a single string.
+
+    Example:
+        >>> join_with_interlines(["# Header", "label start:", '    e "Hi"'], 1)
+        '# Header\\nlabel start:\\n\\n    e "Hi"'
+        # Note: no extra blank line between "# Header" and "label start:"
+    """
+    # Step 1: If interlines is 0 or negative, use standard join behavior
+    # This preserves the default single-newline separation between all lines
+    if interlines <= 0:
+        return "\n".join(lines)
+
+    # Step 2: Build the multi-newline separator for code-to-code spacing
+    # interlines=1 produces "\\n\\n" (one blank line between content)
+    # interlines=2 produces "\\n\\n\\n" (two blank lines between content)
+    separator = "\n" * (interlines + 1)
+
+    # Step 3: Iterate through lines and join with smart spacing
+    # We only insert the interlines separator when BOTH the current line
+    # and the next line are "code" (not comments, not empty).
+    # Otherwise we insert a single newline to keep things compact.
+    result: list[str] = []
+
+    for i, line in enumerate(lines):
+        # Append the current line to the result
+        result.append(line)
+
+        # Check if there is a next line to consider spacing for
+        if i < len(lines) - 1:
+            next_line = lines[i + 1]
+
+            # Determine if the current line is a comment or empty
+            # Comments start with "#" (possibly indented)
+            # Empty lines are intentional structural separators already in the buffer
+            current_is_comment_or_empty = line.startswith("#") or line.strip() == ""
+
+            # Determine if the next line is a comment or empty
+            next_is_comment_or_empty = next_line.startswith("#") or next_line.strip() == ""
+
+            # Only add interlines spacing when both lines are regular code
+            if not current_is_comment_or_empty and not next_is_comment_or_empty:
+                # Both are code lines — insert the full interlines separator
+                result.append(separator)
+            else:
+                # At least one line is a comment or empty — use a single newline
+                # This keeps comment blocks and empty lines compact
+                result.append("\n")
+
+    # Step 4: Join all pieces into the final output string
+    return "".join(result)

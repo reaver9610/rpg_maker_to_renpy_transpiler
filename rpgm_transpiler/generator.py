@@ -42,7 +42,7 @@ from typing import Any
 
 from .constants import CMD
 from .collector import DataCollector
-from .helpers import safe_var, safe_label, clean_text, clean_text_preserve_lines
+from .helpers import safe_var, safe_label, clean_text, clean_text_preserve_lines, join_with_interlines
 
 
 class RenPyGenerator:
@@ -324,15 +324,9 @@ class RenPyGenerator:
         
         # Step 3: Join all lines with newlines and return
         # This produces the final .rpy file content
-        # If interlines > 0, insert that many blank lines between each line
-        if self.interlines > 0:
-            # Create separator with interlines blank lines plus one newline
-            # interlines=1 means "\n\n" (one blank line between content)
-            separator = "\n" * (self.interlines + 1)
-            return separator.join(self.lines)
-        else:
-            # Default behavior: single newline between lines
-            return "\n".join(self.lines)
+        # Uses join_with_interlines to add blank lines only between code lines,
+        # skipping comment lines and empty lines for compact output
+        return join_with_interlines(self.lines, self.interlines)
 
     def _emit_header(self) -> None:
         """Write the file header comment block.

@@ -64,6 +64,7 @@ Output File Structure:
 """
 
 from .collector import DataCollector
+from .helpers import join_with_interlines
 
 
 def generate_switches_rpy(collector: DataCollector, interlines: int = 0) -> str:
@@ -222,9 +223,6 @@ def generate_switches_rpy(collector: DataCollector, interlines: int = 0) -> str:
     output_lines.append("")
 
     # Join all lines with newlines and return
-    # If interlines > 0, insert that many blank lines between each line
-    if interlines > 0:
-        separator = "\n" * (interlines + 1)
-        return separator.join(output_lines)
-    else:
-        return "\n".join(output_lines)
+    # Uses join_with_interlines to add blank lines only between code lines,
+    # skipping comment lines and empty lines for compact output
+    return join_with_interlines(output_lines, interlines)
