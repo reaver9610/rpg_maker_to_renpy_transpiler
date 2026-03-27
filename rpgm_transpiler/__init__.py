@@ -12,16 +12,21 @@ The DataCollector scans all map JSON to discover:
 - Character names and face IDs (for Character definitions and side images)
 - Switch IDs (for game state initialization)
 - Variable IDs (for game state initialization)
-- Self-switch keys (for event-local state)
+- Self-switch keys (for event-local state, grouped by map)
 - Item IDs (for inventory tracking)
 - Map transfer targets (for navigation structure)
 
 Pass 2 (Generation):
-Multiple generators produce output files:
+Multiple generators produce output files using Ren'Py named stores:
 - characters.rpy: Character() definitions with colors and image tags
-- switches.rpy: Default game state values
+- global_switches.rpy: Global switches in the game_switch store
+- global_variables.rpy: Global variables in the game_vars store
+- global_items.rpy: Item inventory in the game_items store
+- global_economy.rpy: Player currency in the game_economy store
+- global_quests.rpy: Quest tracking in the game_quest store
 - side_images.rpy: Side image declarations
 - map_{id}_*.rpy: Event handlers for each map
+- map_{id}_*_switches.rpy: Per-map self-switches in map-specific stores
 - game_flow.rpy: Navigation labels and entry points
 
 Public API:
@@ -33,7 +38,17 @@ Public API:
 
     generate_characters_rpy: Produces characters.rpy with Character definitions.
 
-    generate_switches_rpy: Produces switches.rpy with default state values.
+    generate_global_switches_rpy: Produces global_switches.rpy with switch declarations.
+
+    generate_global_variables_rpy: Produces global_variables.rpy with variable declarations.
+
+    generate_global_items_rpy: Produces global_items.rpy with item declarations.
+
+    generate_global_economy_rpy: Produces global_economy.rpy with gold declaration.
+
+    generate_global_quests_rpy: Produces global_quests.rpy with quest log declaration.
+
+    generate_map_switches_rpy: Produces per-map self-switch declaration files.
 
     generate_game_flow_rpy: Produces game_flow.rpy with map navigation labels.
 
@@ -57,7 +72,14 @@ from pathlib import Path
 from .collector import DataCollector
 from .generator import RenPyGenerator
 from .characters import generate_characters_rpy
-from .switches import generate_switches_rpy
+from .switches import (
+    generate_global_switches_rpy,
+    generate_global_variables_rpy,
+    generate_global_items_rpy,
+    generate_global_economy_rpy,
+    generate_global_quests_rpy,
+    generate_map_switches_rpy,
+)
 from .game_flow import generate_game_flow_rpy
 from .side_images import generate_side_images_rpy
 from .helpers import to_title_case
@@ -69,7 +91,12 @@ __all__ = [
     "RenPyGenerator",
     "generate_characters_rpy",
     "generate_side_images_rpy",
-    "generate_switches_rpy",
+    "generate_global_switches_rpy",
+    "generate_global_variables_rpy",
+    "generate_global_items_rpy",
+    "generate_global_economy_rpy",
+    "generate_global_quests_rpy",
+    "generate_map_switches_rpy",
     "generate_game_flow_rpy",
 ]
 
@@ -92,18 +119,28 @@ def transpile_to_renpy(
     2. Extract map ID from the filename (e.g., "Map001.json" → 1)
     3. Run the data collector to discover all characters, switches, etc.
     4. Generate characters.rpy (Character definitions)
-    5. Generate switches.rpy (default game state values)
-    6. Generate side_images.rpy (side image declarations per face ID)
-    7. Generate a .rpy file for each map's events
-    8. Generate game_flow.rpy (map navigation labels)
+    5. Generate global_switches.rpy (game_switch store declarations)
+    6. Generate global_variables.rpy (game_vars store declarations)
+    7. Generate global_items.rpy (game_items store declarations)
+    8. Generate global_economy.rpy (game_economy store: gold)
+    9. Generate global_quests.rpy (game_quest store: quest_log)
+    10. Generate side_images.rpy (side image declarations per face ID)
+    11. Generate a .rpy file for each map's events + per-map self-switch file
+    12. Generate game_flow.rpy (map navigation labels)
 
     Output Files:
     For input maps Map001.json and Map002.json with display names "Town" and "Forest":
     - outputs/characters.rpy: Character definitions
-    - outputs/switches.rpy: Game state initialization
+    - outputs/global_switches.rpy: game_switch store declarations
+    - outputs/global_variables.rpy: game_vars store declarations
+    - outputs/global_items.rpy: game_items store declarations
+    - outputs/global_economy.rpy: game_economy store (gold)
+    - outputs/global_quests.rpy: game_quest store (quest_log)
     - outputs/side_images.rpy: Side image declarations
-    - outputs/map_1_town.rpy: Town events
-    - outputs/map_2_forest.rpy: Forest events
+    - outputs/maps/map_1_Town/map_1_Town.rpy: Town events
+    - outputs/maps/map_1_Town/map_1_Town_switches.rpy: Town self-switches
+    - outputs/maps/map_2_Forest/map_2_Forest.rpy: Forest events
+    - outputs/maps/map_2_Forest/map_2_Forest_switches.rpy: Forest self-switches
     - outputs/game_flow.rpy: Navigation structure
 
     Args:
@@ -116,7 +153,8 @@ def transpile_to_renpy(
         interlines: Number of blank lines to insert between each line in the output.
         Default 0 means no extra spacing. Use 1 for single blank line between lines, etc.
         interlines_targets: Set of file types to apply interlines to.
-        Valid values: "maps", "characters", "switches", "side_images", "game_flow".
+        Valid values: "maps", "characters", "global_switches", "global_variables",
+        "global_items", "global_economy", "global_quests", "side_images", "game_flow".
         If None and interlines > 0, defaults to {"maps"}.
         If interlines == 0, this parameter is ignored.
 
@@ -126,12 +164,17 @@ def transpile_to_renpy(
          3 characters
          5 switches
          2 variables
-         1 self-switches
+         1 maps with self-switches
 
         [OK] renpy_output/characters.rpy
-        [OK] renpy_output/switches.rpy
+        [OK] renpy_output/global_switches.rpy
+        [OK] renpy_output/global_variables.rpy
+        [OK] renpy_output/global_items.rpy
+        [OK] renpy_output/global_economy.rpy
+        [OK] renpy_output/global_quests.rpy
         [OK] renpy_output/side_images.rpy
-        [OK] renpy_output/map_1_town.rpy
+        [OK] renpy_output/maps/map_1_Town/map_1_Town.rpy
+        [OK] renpy_output/maps/map_1_Town/map_1_Town_switches.rpy
         [OK] renpy_output/game_flow.rpy
 
         [DONE] Transpiled 1 maps to renpy_output/
@@ -349,11 +392,12 @@ def transpile_to_renpy(
 
     # ── Log collection summary ──
     # Provide feedback about what was discovered
+    total_self_switches = sum(len(v) for v in collector.self_switches.values())
     print(f"[INFO] Collected from {len(all_map_data)} maps:")
     print(f"    {len(collector.characters)} characters")
     print(f"    {len(collector.switch_ids)} switches")
     print(f"    {len(collector.variable_ids)} variables")
-    print(f"    {len(collector.self_switches)} self-switches")
+    print(f"    {total_self_switches} self-switches across {len(collector.self_switches)} maps")
     print()
 
     # ═══════════════════════════════════════════════════════════════════
@@ -361,7 +405,8 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     
     # Generate the character definitions
-    character_definitions = generate_characters_rpy(collector, interlines=interlines)
+    character_interlines = interlines if "characters" in interlines_targets else 0
+    character_definitions = generate_characters_rpy(collector, interlines=character_interlines)
     
     # Build the output file path
     characters_path = os.path.join(output_dir, "characters.rpy")
@@ -374,28 +419,68 @@ def transpile_to_renpy(
     print(f"[OK] {characters_path}")
 
     # ═══════════════════════════════════════════════════════════════════
-    # PHASE 3: Generate switches.rpy (default game state)
+    # PHASE 3a: Generate global_switches.rpy (game_switch store)
     # ═══════════════════════════════════════════════════════════════════
     
-    # Generate the switch/variable definitions
-    switch_definitions = generate_switches_rpy(collector, interlines=interlines)
+    global_switches_interlines = interlines if "global_switches" in interlines_targets else 0
+    global_switches_src = generate_global_switches_rpy(collector, interlines=global_switches_interlines)
+    global_switches_path = os.path.join(output_dir, "global_switches.rpy")
+    with open(global_switches_path, "w", encoding="utf-8") as output_file:
+        output_file.write(global_switches_src)
+    print(f"[OK] {global_switches_path}")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # PHASE 3b: Generate global_variables.rpy (game_vars store)
+    # ═══════════════════════════════════════════════════════════════════
     
-    # Build the output file path
-    switches_path = os.path.join(output_dir, "switches.rpy")
+    global_variables_interlines = interlines if "global_variables" in interlines_targets else 0
+    global_variables_src = generate_global_variables_rpy(collector, interlines=global_variables_interlines)
+    global_variables_path = os.path.join(output_dir, "global_variables.rpy")
+    with open(global_variables_path, "w", encoding="utf-8") as output_file:
+        output_file.write(global_variables_src)
+    print(f"[OK] {global_variables_path}")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # PHASE 3c: Generate global_items.rpy (game_items store)
+    # ═══════════════════════════════════════════════════════════════════
     
-    # Write the file
-    with open(switches_path, "w", encoding="utf-8") as output_file:
-        output_file.write(switch_definitions)
+    global_items_interlines = interlines if "global_items" in interlines_targets else 0
+    global_items_src = generate_global_items_rpy(collector, interlines=global_items_interlines)
+    if global_items_src:
+        global_items_path = os.path.join(output_dir, "global_items.rpy")
+        with open(global_items_path, "w", encoding="utf-8") as output_file:
+            output_file.write(global_items_src)
+        print(f"[OK] {global_items_path}")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # PHASE 3d: Generate global_economy.rpy (game_economy store)
+    # ═══════════════════════════════════════════════════════════════════
     
-    # Log success
-    print(f"[OK] {switches_path}")
+    global_economy_interlines = interlines if "global_economy" in interlines_targets else 0
+    global_economy_src = generate_global_economy_rpy(interlines=global_economy_interlines)
+    global_economy_path = os.path.join(output_dir, "global_economy.rpy")
+    with open(global_economy_path, "w", encoding="utf-8") as output_file:
+        output_file.write(global_economy_src)
+    print(f"[OK] {global_economy_path}")
+
+    # ═══════════════════════════════════════════════════════════════════
+    # PHASE 3e: Generate global_quests.rpy (game_quest store)
+    # ═══════════════════════════════════════════════════════════════════
+    
+    global_quests_interlines = interlines if "global_quests" in interlines_targets else 0
+    global_quests_src = generate_global_quests_rpy(interlines=global_quests_interlines)
+    global_quests_path = os.path.join(output_dir, "global_quests.rpy")
+    with open(global_quests_path, "w", encoding="utf-8") as output_file:
+        output_file.write(global_quests_src)
+    print(f"[OK] {global_quests_path}")
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 4: Generate side_images.rpy (side image declarations)
     # ═══════════════════════════════════════════════════════════════════
     
     # Generate the side image declarations
-    side_images_definitions = generate_side_images_rpy(collector, interlines=interlines)
+    side_images_interlines = interlines if "side_images" in interlines_targets else 0
+    side_images_definitions = generate_side_images_rpy(collector, interlines=side_images_interlines)
     
     # Build the output file path
     side_images_path = os.path.join(output_dir, "side_images.rpy")
@@ -423,9 +508,10 @@ def transpile_to_renpy(
         # - interlines: Number of blank lines between output lines
         # - map_name: Human-readable name from MapInfos.json (or None for fallback)
         map_name_for_header = map_infos[map_id]["name"] if map_id in map_infos else None
+        map_interlines = interlines if "maps" in interlines_targets else 0
         generator = RenPyGenerator(
             map_data, collector, map_id, all_map_data, 
-            multiline=multiline, interlines=interlines,
+            multiline=multiline, interlines=map_interlines,
             map_name=map_name_for_header
         )
         
@@ -473,6 +559,21 @@ def transpile_to_renpy(
         
         # Log success
         print(f"[OK] {output_path}")
+
+        # ── Generate per-map self-switch file ──
+        # Each map with self-switches gets a companion _switches.rpy file
+        # placed in the same directory as the map's event .rpy file
+        map_name_for_switches = map_name_for_header or map_data.get("displayName", f"Map{map_id}")
+        map_switches_src = generate_map_switches_rpy(
+            collector, map_id, map_name_for_switches,
+            interlines=map_interlines,
+        )
+        if map_switches_src:
+            # Derive the switches filename from the map filename
+            switches_filename = output_path.rsplit(".", 1)[0] + "_switches.rpy"
+            with open(switches_filename, "w", encoding="utf-8") as output_file:
+                output_file.write(map_switches_src)
+            print(f"[OK] {switches_filename}")
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 6: Generate game_flow.rpy (navigation labels)

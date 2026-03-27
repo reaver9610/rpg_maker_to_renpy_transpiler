@@ -86,9 +86,9 @@ class DataCollector:
         All global variable IDs referenced anywhere in the game
         Example: {1, 3, 7}
 
-    - self_switches: set[tuple[event_id, channel]]
-        All self-switch references, combining event ID and channel letter
-        Example: {(1, "A"), (1, "B"), (5, "A")}
+    - self_switches: dict[map_id → set[tuple[event_id, channel]]]
+        All self-switch references, grouped by map
+        Example: {1: {(1, "A"), (1, "B")}, 3: {(5, "A")}}
 
     - item_ids: set[int]
         All item IDs referenced in conditions or change commands
@@ -118,7 +118,7 @@ class DataCollector:
             character_face_ids (dict): Empty dict to store face_asset → set[face_id] mappings
             switch_ids (set): Empty set for global switch IDs
             variable_ids (set): Empty set for global variable IDs
-            self_switches (set): Empty set for (event_id, channel) tuples
+            self_switches (dict): Empty dict for map_id → set of (event_id, channel) tuples
             item_ids (set): Empty set for item IDs
             map_ids (set): Empty set for map IDs
             plugin_commands (list): Empty list for plugin command strings
@@ -134,20 +134,20 @@ class DataCollector:
         self.character_face_ids: dict[str, set[int]] = {}
         
         # Global switches: boolean flags that persist across maps
-        # Used by generate_switches_rpy() to initialize: switch_{id} = False
+        # Used by generate_global_switches_rpy() to initialize: switch_{id} = False
         self.switch_ids: set[int] = set()
         
         # Global variables: integer values that persist across maps
-        # Used by generate_switches_rpy() to initialize: var_{id} = 0
+        # Used by generate_global_variables_rpy() to initialize: var_{id} = 0
         self.variable_ids: set[int] = set()
         
         # Self-switches: event-local boolean flags (A/B/C/D channels)
-        # Keyed by (event_id, channel_letter) to ensure uniqueness per event
-        # Used by generate_switches_rpy() to initialize: selfswitch_{event_id}_{channel} = False
-        self.self_switches: set[tuple[int, str]] = set()
+        # Grouped by map_id: {map_id → set of (event_id, channel_letter)}
+        # Used by generate_map_switches_rpy() to create per-map store declarations
+        self.self_switches: dict[int, set[tuple[int, str]]] = {}
         
         # Items: inventory counters
-        # Used by generate_switches_rpy() to initialize: item_{id} = 0
+        # Used by generate_global_items_rpy() to initialize: item_{id} = 0
         self.item_ids: set[int] = set()
         
         # Map IDs: all maps referenced in transfers or loaded as input
@@ -285,6 +285,78 @@ class DataCollector:
             # Fallback: just use the ID without a name
             return f"var_{variable_id}"
 
+    def get_switch_store_name(self, switch_id: int) -> str:
+        """Get a fully-qualified store-prefixed variable name for a global switch.
+
+        Returns the switch name prefixed with the game_switch store namespace.
+
+        Format: game_switch.switch_{id}_{sanitized_name}
+
+        Args:
+            switch_id: The numeric switch ID (1-based).
+
+        Returns:
+            Store-prefixed variable name suitable for Ren'Py.
+
+        Example:
+            >>> collector.get_switch_store_name(278)
+            'game_switch.switch_278_guards_insulted'
+            >>> collector.get_switch_store_name(999)
+            'game_switch.switch_999'
+        """
+        return f"game_switch.{self.get_switch_name(switch_id)}"
+
+    def get_variable_store_name(self, variable_id: int) -> str:
+        """Get a fully-qualified store-prefixed variable name for a global variable.
+
+        Returns the variable name prefixed with the game_vars store namespace.
+
+        Format: game_vars.var_{id}_{sanitized_name}
+
+        Args:
+            variable_id: The numeric variable ID (1-based).
+
+        Returns:
+            Store-prefixed variable name suitable for Ren'Py.
+
+        Example:
+            >>> collector.get_variable_store_name(2)
+            'game_vars.var_2_claires_defiance'
+            >>> collector.get_variable_store_name(999)
+            'game_vars.var_999'
+        """
+        return f"game_vars.{self.get_variable_name(variable_id)}"
+
+    def get_self_switch_store_name(self, map_id: int) -> str:
+        """Get the Ren'Py named store name for a map's self-switches.
+
+        Returns a store name combining the map ID with its sanitized display name.
+        This store is used in per-map self-switch declaration files and in
+        self-switch references throughout the generated code.
+
+        Format: map_{id}_{sanitized_name}
+
+        Args:
+            map_id: The numeric map ID (1-based).
+
+        Returns:
+            Store name suitable for use as a Ren'Py named store namespace.
+
+        Example:
+            >>> # With map_names[1] = "Checkpoint"
+            >>> collector.get_self_switch_store_name(1)
+            'map_1_checkpoint'
+            >>> # With map_names[1] = "Outer Valos"
+            >>> collector.get_self_switch_store_name(1)
+            'map_1_outer_valos'
+            >>> # Unknown map
+            >>> collector.get_self_switch_store_name(999)
+            'map_999'
+        """
+        raw_name = self.map_names.get(map_id, f"map_{map_id}")
+        sanitized = self._sanitize_name_for_variable(raw_name)
+        return f"map_{map_id}_{sanitized}"
+
     def _get_switch_raw_name(self, switch_id: int) -> str | None:
         """Get the raw name of a switch from System.json.
 
@@ -392,13 +464,13 @@ class DataCollector:
             for page in event.get("pages", []):
                 # Step 5: Scan page conditions for switch/variable/item IDs
                 # Conditions determine when this page is active
-                self._collect_conditions(page.get("conditions", {}), event_id)
+                self._collect_conditions(page.get("conditions", {}), event_id, map_id)
                 
                 # Step 6: Scan page commands for all referenced IDs
                 # Commands are the actual event logic (dialogue, choices, etc.)
-                self._collect_commands(page.get("list", []), event_id)
+                self._collect_commands(page.get("list", []), event_id, map_id)
 
-    def _collect_conditions(self, conditions: dict[str, Any], event_id: int) -> None:
+    def _collect_conditions(self, conditions: dict[str, Any], event_id: int, map_id: int = 0) -> None:
         """Extract switch/variable/item IDs from an event page's condition block.
 
         RPG Maker event pages can be gated on multiple conditions:
@@ -429,10 +501,12 @@ class DataCollector:
             conditions: The 'conditions' dict from an event page JSON object.
             event_id: The owning event's numeric ID.
                 Used to create self-switch keys: (event_id, channel).
+            map_id: The owning map's numeric ID.
+                Used to associate self-switches with their map for per-map store generation.
 
         Example:
             >>> conditions = {"switch1Valid": True, "switch1Id": 5}
-            >>> collector._collect_conditions(conditions, 1)
+            >>> collector._collect_conditions(conditions, 1, 1)
             >>> print(collector.switch_ids)
             {5}
         """
@@ -461,9 +535,10 @@ class DataCollector:
         if conditions.get("selfSwitchValid"):
             # Get the channel letter, defaulting to "A"
             channel = conditions.get("selfSwitchCh", "A")
-            # Add the (event_id, channel) tuple to our set
-            # This ensures switches.rpy initializes: selfswitch_{event_id}_{channel} = False
-            self.self_switches.add((event_id, channel))
+            # Add the (event_id, channel) tuple to our map-specific set
+            # This ensures generate_map_switches_rpy() initializes:
+            # map_{id}_{name}.switch_{event_id}_{channel} = False
+            self.self_switches.setdefault(map_id, set()).add((event_id, channel))
 
         # Condition type 5: Player must possess at least one of a specific item
         # The page appears when the player has 1+ of itemId
@@ -472,7 +547,7 @@ class DataCollector:
             # This ensures switches.rpy initializes: item_{id} = 0
             self.item_ids.add(conditions["itemId"])
 
-    def _collect_commands(self, commands: list[dict[str, Any]], event_id: int) -> None:
+    def _collect_commands(self, commands: list[dict[str, Any]], event_id: int, map_id: int = 0) -> None:
         """Extract all referenced IDs from an event page's command list.
 
         This method walks through every command in the event page's 'list' array
@@ -498,13 +573,15 @@ class DataCollector:
                 Each command has: code (int), indent (int), parameters (list)
             event_id: The owning event's numeric ID.
                 Used for self-switch keys in CONDITIONAL commands.
+            map_id: The owning map's numeric ID.
+                Used to associate self-switches with their map.
 
         Example:
             >>> commands = [
             ...     {"code": 101, "parameters": ["$Claire", 2]},
             ...     {"code": 121, "parameters": [5, 5, 0]}  # switch 5 = ON
             ... ]
-            >>> collector._collect_commands(commands, 1)
+            >>> collector._collect_commands(commands, 1, 1)
             >>> print(collector.characters)
             {'$Claire': 'Claire'}
             >>> print(collector.switch_ids)
@@ -575,9 +652,9 @@ class DataCollector:
                 # Get the channel letter (A, B, C, or D)
                 channel = parameters[0]
                 
-                # Add the self-switch key to our set
-                # Key format: (event_id, channel)
-                self.self_switches.add((event_id, channel))
+                # Add the self-switch key to our map-specific set
+                # Key format: (event_id, channel), grouped by map_id
+                self.self_switches.setdefault(map_id, set()).add((event_id, channel))
 
             # ── CONDITIONAL (code 111): If/else branch ──
             # Parameters: [condition_type, ...type_specific_params]
@@ -601,8 +678,8 @@ class DataCollector:
                 # Condition type 2: Self-switch check
                 # Parameters: [2, channel, expected_value]
                 elif condition_type == 2:
-                    # Add the self-switch key being checked
-                    self.self_switches.add((event_id, parameters[1]))
+                    # Add the self-switch key being checked, grouped by map
+                    self.self_switches.setdefault(map_id, set()).add((event_id, parameters[1]))
 
             # ── TRANSFER_PLAYER (code 201): Jump to another map ──
             # Parameters: [transfer_type, map_id, x, y, direction, fade]

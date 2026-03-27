@@ -14,7 +14,7 @@ rpgm_transpiler/           # Package
 ├── helpers.py             # Pure utility functions (safe_var, safe_label, clean_text, side_image_tag)
 ├── generator.py           # RenPyGenerator class (map event → Ren'Py conversion)
 ├── characters.py          # generate_characters_rpy() + _get_character_color()
-├── switches.py            # generate_switches_rpy()
+├── switches.py            # generate_global_*_rpy() + generate_map_switches_rpy()
 ├── game_flow.py           # generate_game_flow_rpy()
 └── side_images.py         # generate_side_images_rpy()
 
@@ -25,6 +25,38 @@ inputs/                    # Test JSON map files
 outputs/                   # Default output directory
 renpy_output/              # Alternative output directory (deprecated)
 ```
+
+### Output File Structure (Ren'Py Named Stores)
+
+```
+outputs/
+  characters.rpy                          # define claire = Character(...)
+  global_switches.rpy                     # init python in game_switch:
+  global_variables.rpy                    # init python in game_vars:
+  global_items.rpy                        # init python in game_items:
+  global_economy.rpy                      # init python in game_economy:
+  global_quests.rpy                       # init python in game_quest:
+  side_images.rpy                         # image side claire 0 = ...
+  game_flow.rpy                           # label start: / label map_1_enter:
+  maps/
+    map_1_Checkpoint/
+      map_1_Checkpoint.rpy                # label event_3_auto: ...
+      map_1_Checkpoint_switches.rpy       # init python in map_1_checkpoint:
+    map_3_Refugee_Camp/
+      map_3_Refugee_Camp.rpy
+      map_3_Refugee_Camp_switches.rpy
+```
+
+### Store Reference Patterns
+
+| Concept | Store | Example Reference |
+|---|---|---|
+| Global Switch | `game_switch` | `game_switch.switch_5_paid` |
+| Global Variable | `game_vars` | `game_vars.var_2_defiance` |
+| Self-Switch | `map_{id}_{name}` | `map_1_checkpoint.switch_3_A` |
+| Item | `game_items` | `game_items.item_1` |
+| Gold | `game_economy` | `game_economy.gold` |
+| Quest Log | `game_quest` | `game_quest.quest_log` |
 
 ## Running the Transpiler
 
@@ -85,7 +117,11 @@ rpgm-transpile -i --file inputs/Map001.json -f --multiline
 - `-n, --interlines N` - Number of blank lines between each line in output (default: 0)
   - `--maps` - Apply interlines to map files only (default when -n is used)
   - `--characters` - Apply interlines to characters.rpy
-  - `--switches` - Apply interlines to switches.rpy
+  - `--global-switches` - Apply interlines to global_switches.rpy
+  - `--global-variables` - Apply interlines to global_variables.rpy
+  - `--global-items` - Apply interlines to global_items.rpy
+  - `--global-economy` - Apply interlines to global_economy.rpy
+  - `--global-quests` - Apply interlines to global_quests.rpy
   - `--side-images` - Apply interlines to side_images.rpy
   - `--game-flow` - Apply interlines to game_flow.rpy
   - `--all` - Apply interlines to all output files
@@ -137,7 +173,7 @@ Test scripts are in `test_scripts/` directory:
 | `test_folder.sh` | Directory input with `-i --directory` |
 | `test_regex.sh` | Glob pattern input with `-i --regex` |
 | `test_interlines_default.sh` | Test `-n 2` (defaults to maps) |
-| `test_interlines_targets.sh` | Test `-n 1 --characters --switches` |
+| `test_interlines_targets.sh` | Test `-n 1 --characters --global-switches` |
 | `test_interlines_all.sh` | Test `-n 1 --all` flag |
 | `test_multiline_format.sh` | Test `-f --multiline` format |
 | `test_output_dir.sh` | Test custom output directory `-o` |
@@ -166,7 +202,7 @@ No linter or formatter is configured (no ruff, flake8, black, mypy, etc.). If ad
 - `helpers.py` — Pure utility functions: `safe_var()`, `safe_label()`, `clean_text()`, `clean_text_preserve_lines()`, `side_image_tag()`
 - `generator.py` — `RenPyGenerator` class generates `.rpy` source from a single map's event data
 - `characters.py` — `generate_characters_rpy()` + `_get_character_color()` helper
-- `switches.py` — `generate_switches_rpy()`
+- `switches.py` — `generate_global_switches_rpy()`, `generate_global_variables_rpy()`, `generate_global_items_rpy()`, `generate_global_economy_rpy()`, `generate_global_quests_rpy()`, `generate_map_switches_rpy()`
 - `game_flow.py` — `generate_game_flow_rpy()`
 - `side_images.py` — `generate_side_images_rpy()`
 - `__init__.py` — `transpile_to_renpy()` orchestrator function; re-exports public API

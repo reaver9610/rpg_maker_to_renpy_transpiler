@@ -89,7 +89,7 @@ class RenPyGenerator:
             shopkeeper "What would you like to buy?"
             menu:
                 "Potion":
-                    $ gold -= 50
+                    $ game_economy.gold -= 50
                 "Nothing":
                     pass
             return
@@ -168,6 +168,10 @@ class RenPyGenerator:
         # Store the map name for use in header comments
         # Priority: provided map_name > displayName from map_data > "Unknown"
         self.map_name = map_name or map_data.get("displayName", "Unknown")
+
+        # Store the Ren'Py named store name for this map's self-switches
+        # Used in self-switch references: $ map_{id}_{name}.switch_{eid}_{ch} = True
+        self.map_store_name = collector.get_self_switch_store_name(map_id)
         
         # Initialize the output buffer
         # All generated Ren'Py lines are appended here
@@ -778,7 +782,7 @@ class RenPyGenerator:
                 continue
 
             # ── CONTROL_SWITCHES (code 121): Set global switches ──
-            # Emits: $ switch_{id}_{name} = True/False
+            # Emits: $ game_switch.switch_{id}_{name} = True/False
             elif command_code == CMD["CONTROL_SWITCHES"]:
                 # Flush any pending text
                 self._flush_text()
@@ -792,12 +796,12 @@ class RenPyGenerator:
                 
                 # Emit assignment for each switch in the range
                 for switch_id in range(start_id, end_id + 1):
-                    # Get the concatenated variable name (switch_{id}_{name})
-                    variable_name = self.collector.get_switch_name(switch_id)
+                    # Get the store-prefixed variable name (game_switch.switch_{id}_{name})
+                    variable_name = self.collector.get_switch_store_name(switch_id)
                     self._emit(f"$ {variable_name} = {renpy_value}")
 
             # ── CONTROL_VARIABLES (code 122): Modify variables ──
-            # Emits: $ var_{id}_{name} = value or $ var_{id}_{name} += value
+            # Emits: $ game_vars.var_{id}_{name} = value or $ game_vars.var_{id}_{name} += value
             elif command_code == CMD["CONTROL_VARIABLES"]:
                 # Flush any pending text
                 self._flush_text()
@@ -818,8 +822,8 @@ class RenPyGenerator:
                 
                 # Emit assignment for each variable in the range
                 for variable_id in range(start_id, end_id + 1):
-                    # Get the concatenated variable name (var_{id}_{name})
-                    variable_name = self.collector.get_variable_name(variable_id)
+                    # Get the store-prefixed variable name (game_vars.var_{id}_{name})
+                    variable_name = self.collector.get_variable_store_name(variable_id)
                     if operation_type == 0:
                         # Set operation: direct assignment
                         self._emit(f"$ {variable_name} = {operand_value}")
@@ -828,7 +832,7 @@ class RenPyGenerator:
                         self._emit(f"$ {variable_name} {operator_symbol} {operand_value}")
 
             # ── CONTROL_SELF_SWITCH (code 123): Toggle event-local switch ──
-            # Emits: $ selfswitch_{event_id}_{channel} = True/False
+            # Emits: $ map_{id}_{name}.switch_{event_id}_{channel} = True/False
             elif command_code == CMD["CONTROL_SELF_SWITCH"]:
                 # Flush any pending text
                 self._flush_text()
@@ -840,11 +844,11 @@ class RenPyGenerator:
                 # RPG Maker: 0 = ON (True), 1 = OFF (False)
                 renpy_value = "True" if parameters[1] == 0 else "False"
                 
-                # Emit the self-switch assignment
-                self._emit(f"$ selfswitch_{event_id}_{channel} = {renpy_value}")
+                # Emit the self-switch assignment using the per-map store
+                self._emit(f"$ {self.map_store_name}.switch_{event_id}_{channel} = {renpy_value}")
 
             # ── CHANGE_GOLD (code 125): Add/remove gold ──
-            # Emits: $ gold += amount or $ gold -= amount
+            # Emits: $ game_economy.gold += amount or $ game_economy.gold -= amount
             elif command_code == CMD["CHANGE_GOLD"]:
                 # Flush any pending text
                 self._flush_text()
@@ -855,9 +859,9 @@ class RenPyGenerator:
                 # Check operation type (first parameter)
                 # 0 = increase, 1 = decrease
                 if parameters[0] == 0:
-                    self._emit(f"$ gold += {gold_amount}")
+                    self._emit(f"$ game_economy.gold += {gold_amount}")
                 else:
-                    self._emit(f"$ gold -= {gold_amount}")
+                    self._emit(f"$ game_economy.gold -= {gold_amount}")
 
             # ── WAIT (code 230): Pause execution ──
             # Emits: pause {seconds}
@@ -1289,8 +1293,8 @@ class RenPyGenerator:
             start_id, end_id, value = parameters[0], parameters[1], parameters[2]
             renpy_value = "True" if value == 0 else "False"
             for switch_id in range(start_id, end_id + 1):
-                # Get the concatenated variable name (switch_{id}_{name})
-                variable_name = self.collector.get_switch_name(switch_id)
+                # Get the store-prefixed variable name (game_switch.switch_{id}_{name})
+                variable_name = self.collector.get_switch_store_name(switch_id)
                 self._emit(f"$ {variable_name} = {renpy_value}")
 
         # ── CONTROL_VARIABLES: Modify variables ──
@@ -1300,8 +1304,8 @@ class RenPyGenerator:
             operand_value = parameters[3]
             operator_map = {0: "=", 1: "+=", 2: "-=", 3: "*=", 4: "//=", 5: "%="}
             for variable_id in range(start_id, end_id + 1):
-                # Get the concatenated variable name (var_{id}_{name})
-                variable_name = self.collector.get_variable_name(variable_id)
+                # Get the store-prefixed variable name (game_vars.var_{id}_{name})
+                variable_name = self.collector.get_variable_store_name(variable_id)
                 if operation_type == 0:
                     self._emit(f"$ {variable_name} = {operand_value}")
                 else:
@@ -1311,15 +1315,15 @@ class RenPyGenerator:
         elif command_code == CMD["CONTROL_SELF_SWITCH"]:
             channel = parameters[0]
             renpy_value = "True" if parameters[1] == 0 else "False"
-            self._emit(f"$ selfswitch_{event_id}_{channel} = {renpy_value}")
+            self._emit(f"$ {self.map_store_name}.switch_{event_id}_{channel} = {renpy_value}")
 
         # ── CHANGE_GOLD: Add/remove gold ──
         elif command_code == CMD["CHANGE_GOLD"]:
             gold_amount = parameters[2] if len(parameters) > 2 else 0
             if parameters[0] == 0:
-                self._emit(f"$ gold += {gold_amount}")
+                self._emit(f"$ game_economy.gold += {gold_amount}")
             else:
-                self._emit(f"$ gold -= {gold_amount}")
+                self._emit(f"$ game_economy.gold -= {gold_amount}")
 
         # ── PLUGIN_COMMAND: Handle plugin command ──
         elif command_code == CMD["PLUGIN_COMMAND"]:
@@ -1364,17 +1368,17 @@ class RenPyGenerator:
             event_id: The owning event's ID (for self-switch references).
 
         Returns:
-            Ren'Py condition expression (e.g., "switch_5 and var_3 >= 10").
+            Ren'Py condition expression (e.g., "game_switch.switch_5 and game_vars.var_3 >= 10").
             Returns empty string if no conditions are set.
 
         Example:
             >>> conditions = {"switch1Valid": True, "switch1Id": 5}
             >>> self._build_renpy_condition(conditions, 1)
-            'switch_5'
+            'game_switch.switch_5'
 
             >>> conditions = {"switch1Valid": True, "switch1Id": 5, "variableValid": True, "variableId": 3, "variableValue": 10}
             >>> self._build_renpy_condition(conditions, 1)
-            'switch_5 and var_3 >= 10'
+            'game_switch.switch_5 and game_vars.var_3 >= 10'
         """
         # Initialize the list of condition checks
         condition_checks: list[str] = []
@@ -1382,38 +1386,38 @@ class RenPyGenerator:
         # Condition type 1: First global switch must be ON
         if conditions.get("switch1Valid"):
             switch_id = conditions["switch1Id"]
-            # Get the concatenated variable name (switch_{id}_{name})
-            variable_name = self.collector.get_switch_name(switch_id)
+            # Get the store-prefixed variable name (game_switch.switch_{id}_{name})
+            variable_name = self.collector.get_switch_store_name(switch_id)
             # Check if switch is True (ON)
             condition_checks.append(variable_name)
 
         # Condition type 2: Second global switch must be ON
         if conditions.get("switch2Valid"):
             switch_id = conditions["switch2Id"]
-            # Get the concatenated variable name (switch_{id}_{name})
-            variable_name = self.collector.get_switch_name(switch_id)
+            # Get the store-prefixed variable name (game_switch.switch_{id}_{name})
+            variable_name = self.collector.get_switch_store_name(switch_id)
             condition_checks.append(variable_name)
 
         # Condition type 3: Variable must meet threshold
         if conditions.get("variableValid"):
             variable_id = conditions["variableId"]
             threshold_value = conditions["variableValue"]
-            # Get the concatenated variable name (var_{id}_{name})
-            variable_name = self.collector.get_variable_name(variable_id)
+            # Get the store-prefixed variable name (game_vars.var_{id}_{name})
+            variable_name = self.collector.get_variable_store_name(variable_id)
             # Check if variable >= threshold
             condition_checks.append(f"{variable_name} >= {threshold_value}")
 
         # Condition type 4: Self-switch must be ON
         if conditions.get("selfSwitchValid"):
             channel = conditions.get("selfSwitchCh", "A")
-            # Check if self-switch is True
-            condition_checks.append(f"selfswitch_{event_id}_{channel}")
+            # Check if self-switch is True using the per-map store
+            condition_checks.append(f"{self.map_store_name}.switch_{event_id}_{channel}")
 
         # Condition type 5: Item requirement
         if conditions.get("itemValid"):
             item_id = conditions["itemId"]
-            # Check if player has 1+ of item
-            condition_checks.append(f"item_{item_id} > 0")
+            # Check if player has 1+ of item using the items store
+            condition_checks.append(f"game_items.item_{item_id} > 0")
 
         # Join all conditions with "and"
         return " and ".join(condition_checks) if condition_checks else ""
@@ -1449,11 +1453,11 @@ class RenPyGenerator:
         Example:
             >>> # Switch check
             >>> self._parse_condition_expr([0, 5, 0], 1)  # switch 5 is ON
-            'switch_5'
+            'game_switch.switch_5'
 
             >>> # Variable comparison
             >>> self._parse_condition_expr([1, 3, 1, 10], 1)  # var_3 >= 10
-            'var_3 >= 10'
+            'game_vars.var_3 >= 10'
         """
         # Get the condition type (first parameter)
         condition_type = parameters[0]
@@ -1464,8 +1468,8 @@ class RenPyGenerator:
             switch_id = parameters[1]
             expected_value = parameters[2]
             
-            # Get the concatenated variable name (switch_{id}_{name})
-            variable_name = self.collector.get_switch_name(switch_id)
+            # Get the store-prefixed variable name (game_switch.switch_{id}_{name})
+            variable_name = self.collector.get_switch_store_name(switch_id)
             
             # Build the condition expression
             if expected_value == 0:
@@ -1486,8 +1490,8 @@ class RenPyGenerator:
             comparison_map = {0: "==", 1: ">=", 2: "<=", 3: ">", 4: "<", 5: "!="}
             comparison_operator = comparison_map.get(comparison_type, "==")
             
-            # Get the concatenated variable name (var_{id}_{name})
-            variable_name = self.collector.get_variable_name(variable_id)
+            # Get the store-prefixed variable name (game_vars.var_{id}_{name})
+            variable_name = self.collector.get_variable_store_name(variable_id)
             
             # Build the condition expression
             return f"{variable_name} {comparison_operator} {comparison_value}"
@@ -1498,13 +1502,13 @@ class RenPyGenerator:
             channel = parameters[1]
             expected_value = parameters[2]
             
-            # Build the condition expression
+            # Build the condition expression using the per-map store
             if expected_value == 0:
                 # Expected ON: self-switch is True
-                return f"selfswitch_{event_id}_{channel}"
+                return f"{self.map_store_name}.switch_{event_id}_{channel}"
             else:
                 # Expected OFF: self-switch is False (use "not")
-                return f"not selfswitch_{event_id}_{channel}"
+                return f"not {self.map_store_name}.switch_{event_id}_{channel}"
 
         # ── Condition type 7: Gold comparison ──
         elif condition_type == 7:
@@ -1517,8 +1521,8 @@ class RenPyGenerator:
             comparison_map = {0: ">=", 1: "<=", 2: "<", 3: ">", 4: "==", 5: "!="}
             comparison_operator = comparison_map.get(comparison_type, ">=")
             
-            # Build the condition expression
-            return f"gold {comparison_operator} {gold_amount}"
+            # Build the condition expression using the economy store
+            return f"game_economy.gold {comparison_operator} {gold_amount}"
 
         # ── Condition type 6: Script expression ──
         elif condition_type == 6:
@@ -1559,7 +1563,7 @@ class RenPyGenerator:
         # Handle quest-related commands by logging and displaying
         if plugin_command_string.startswith("Quest"):
             # Append to quest log for tracking
-            self._emit(f'$ quest_log.append("{plugin_command_string}")')
+            self._emit(f'$ game_quest.quest_log.append("{plugin_command_string}")')
             
             # Display the quest notification as dialogue
             self._emit(f'"{plugin_command_string}"')

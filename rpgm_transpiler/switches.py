@@ -1,8 +1,12 @@
-"""Generates switches.rpy with default game state variable declarations.
+"""Generates .rpy files for global game state declarations using Ren'Py named stores.
 
-This module creates the switches.rpy file containing `init python:` assignments for
-every switch, variable, self-switch, item, and utility variable (gold, quest log)
-discovered during the collection phase.
+This module creates separate .rpy files for each category of game state discovered
+during the collection phase: global switches, global variables, items, economy (gold),
+and quest log. Each file uses a dedicated Ren'Py named store for clean namespace
+separation.
+
+Additionally, per-map self-switch declaration files are generated, placing self-switches
+in map-specific stores.
 
 Game State in RPG Maker vs Ren'Py:
 RPG Maker MV uses a database-driven approach:
@@ -11,10 +15,21 @@ RPG Maker MV uses a database-driven approach:
 - Self-switches: Event-local booleans (A/B/C/D channels)
 - Items: Database entries with quantities
 
-Ren'Py uses Python variables:
-- We map RPG Maker IDs to named variables: switch_5, var_12
-- Self-switches combine event ID and channel: selfswitch_5_A
-- Items are simple counters: item_3
+Ren'Py uses Python variables organized in named stores:
+- game_switch: Global switches (e.g., game_switch.switch_5_paid)
+- game_vars: Global variables (e.g., game_vars.var_2_defiance)
+- map_{id}_{name}: Per-map self-switches (e.g., map_1_checkpoint.switch_3_A)
+- game_items: Item quantities (e.g., game_items.item_1)
+- game_economy: Player currency (e.g., game_economy.gold)
+- game_quest: Quest tracking (e.g., game_quest.quest_log)
+
+Output Files:
+    global_switches.rpy     → init python in game_switch:
+    global_variables.rpy    → init python in game_vars:
+    global_items.rpy        → init python in game_items:
+    global_economy.rpy      → init python in game_economy:
+    global_quests.rpy       → init python in game_quest:
+    map_{id}_{name}_switches.rpy → init python in map_{id}_{name}: (per map)
 
 Initialization Strategy:
 All game state defaults to "empty" values:
@@ -27,97 +42,42 @@ All game state defaults to "empty" values:
 
 This matches RPG Maker's behavior where new games start with all switches OFF
 and all variables at 0.
-
-Output File Structure:
-    # ═══════════════════════════════════════════════════
-    # GAME STATE — Switches, Variables, Self-Switches
-    # Auto-generated from RPG Maker MV
-    # ═══════════════════════════════════════════════════
-
-    init python:
-
-        # ── Global Switches ──
-        switch_1 = False
-        switch_5 = False
-        ...
-
-        # ── Variables ──
-        var_1 = 0
-        var_3 = 0
-        ...
-
-        # ── Self-Switches ──
-        selfswitch_1_A = False
-        selfswitch_5_B = False
-        ...
-
-        # ── Items ──
-        item_1 = 0
-        item_5 = 0
-        ...
-
-        # ── Gold ──
-        gold = 0
-
-        # ── Quest Log ──
-        quest_log = []
 """
 
 from .collector import DataCollector
-from .helpers import join_with_interlines
+from .helpers import join_with_interlines, to_title_case
 
 
-def generate_switches_rpy(collector: DataCollector, interlines: int = 0) -> str:
-    """Generate switches.rpy with default game state variable declarations.
+def generate_global_switches_rpy(collector: DataCollector, interlines: int = 0) -> str:
+    """Generate global_switches.rpy with default global switch declarations.
 
-    Creates a .rpy file containing `init python:` assignments for every
-    switch, variable, self-switch, item, and utility variable (gold, quest log)
-    discovered during the collection phase.
+    Creates a .rpy file containing `init python in game_switch:` assignments for every
+    global switch discovered during the collection phase.
 
-    Initialization Values:
-    - Switches: False (RPG Maker OFF state)
-    - Variables: 0 (RPG Maker default)
-    - Self-switches: False (RPG Maker OFF state)
-    - Items: 0 (empty inventory)
-    - Gold: 0 (starting with no money)
-    - Quest log: [] (empty list)
-
-    Variable Naming Convention:
-    All game state variables use snake_case with type prefixes:
-    - switch_{id}_{name}: Global switches (e.g., switch_278_guards_insulted)
-    - var_{id}_{name}: Global variables (e.g., var_2_claires_defiance)
-    - selfswitch_{event_id}_{channel}: Self-switches (e.g., selfswitch_5_A)
-    - item_{id}: Item quantities (e.g., item_3)
-    - gold: Player currency
-    - quest_log: Quest tracking list
-    
-    When System.json is available, switch and variable names are concatenated
-    with their human-readable names for improved code readability.
+    Store: game_switch
+    Reference: game_switch.switch_{id}_{name}
 
     Args:
-        collector: DataCollector instance populated with switch/variable/item data.
-        Required attributes:
-        - switch_ids: set of global switch IDs
-        - variable_ids: set of global variable IDs
-        - self_switches: set of (event_id, channel) tuples
-        - item_ids: set of item IDs
+        collector: DataCollector instance populated with switch data.
+            Required attributes:
+            - switch_ids: set of global switch IDs
+            - get_switch_name(switch_id): returns variable name like "switch_5_paid"
         interlines: Number of blank lines to insert between each output line.
-        Default 0 means no extra spacing.
+            Default 0 means no extra spacing.
 
-        Returns:
-        Complete .rpy source string for switches.rpy.
-        Ready to be written to a file.
+    Returns:
+        Complete .rpy source string for global_switches.rpy.
 
     Example:
         >>> collector = DataCollector()
-        >>> # ... populate collector ...
-        >>> source = generate_switches_rpy(collector)
-        >>> with open("switches.rpy", "w") as f:
+        >>> # ... populate collector with switch_ids ...
+        >>> source = generate_global_switches_rpy(collector)
+        >>> with open("global_switches.rpy", "w") as f:
         ...     f.write(source)
 
     Note:
-        The generated file is designed to be included in Ren'Py's init phase.
-        Variables are accessible throughout the game after the init phase completes.
+        The generated file uses a Ren'Py named store (game_switch) so all
+        switch references in other .rpy files must be prefixed with game_switch.
     """
     # Initialize the output lines list
     output_lines: list[str] = []
@@ -125,104 +85,348 @@ def generate_switches_rpy(collector: DataCollector, interlines: int = 0) -> str:
     # ── File Header ──
     # Emit a decorative header with section marker
     output_lines.append("# ═══════════════════════════════════════════════════")
-    output_lines.append("# GAME STATE — Switches, Variables, Self-Switches")
+    output_lines.append("# GLOBAL SWITCHES")
     output_lines.append("# Auto-generated from RPG Maker MV")
     output_lines.append("# ═══════════════════════════════════════════════════")
-    output_lines.append("")
-    
-    # ── Init Python Block ──
-    # All game state variables are defined in an init python block
-    # This ensures they're initialized before any game code runs
-    output_lines.append("init python:")
     output_lines.append("")
 
     # ── Global Switches ──
     # Emit only if there are switches in the collection
     if collector.switch_ids:
-        output_lines.append("    # ── Global Switches ──")
-        
+        # Use the game_switch named store for clean namespace separation
+        output_lines.append("init python in game_switch:")
+        output_lines.append("")
+
         # Iterate over switches in sorted order for consistent output
         for switch_id in sorted(collector.switch_ids):
             # Get the concatenated variable name (switch_{id}_{name})
             # Uses System.json names if available
             variable_name = collector.get_switch_name(switch_id)
-            
+
             # Initialize each switch to False (OFF state)
             # In RPG Maker, switches default to OFF when a new game starts
             output_lines.append(f"    {variable_name} = False")
-        
-        # Add a blank line for readability
+
+        # Add a trailing blank line
         output_lines.append("")
+
+    # Join all lines with newlines and return
+    # Uses join_with_interlines to add blank lines only between code lines,
+    # skipping comment lines and empty lines for compact output
+    return join_with_interlines(output_lines, interlines)
+
+
+def generate_global_variables_rpy(collector: DataCollector, interlines: int = 0) -> str:
+    """Generate global_variables.rpy with default global variable declarations.
+
+    Creates a .rpy file containing `init python in game_vars:` assignments for every
+    global variable discovered during the collection phase.
+
+    Store: game_vars
+    Reference: game_vars.var_{id}_{name}
+
+    Args:
+        collector: DataCollector instance populated with variable data.
+            Required attributes:
+            - variable_ids: set of global variable IDs
+            - get_variable_name(variable_id): returns name like "var_2_defiance"
+        interlines: Number of blank lines to insert between each output line.
+            Default 0 means no extra spacing.
+
+    Returns:
+        Complete .rpy source string for global_variables.rpy.
+
+    Example:
+        >>> collector = DataCollector()
+        >>> # ... populate collector with variable_ids ...
+        >>> source = generate_global_variables_rpy(collector)
+        >>> with open("global_variables.rpy", "w") as f:
+        ...     f.write(source)
+
+    Note:
+        The generated file uses a Ren'Py named store (game_vars) so all
+        variable references in other .rpy files must be prefixed with game_vars.
+    """
+    # Initialize the output lines list
+    output_lines: list[str] = []
+
+    # ── File Header ──
+    # Emit a decorative header with section marker
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("# GLOBAL VARIABLES")
+    output_lines.append("# Auto-generated from RPG Maker MV")
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("")
 
     # ── Variables ──
     # Emit only if there are variables in the collection
     if collector.variable_ids:
-        output_lines.append("    # ── Variables ──")
-        
+        # Use the game_vars named store for clean namespace separation
+        output_lines.append("init python in game_vars:")
+        output_lines.append("")
+
         # Iterate over variables in sorted order for consistent output
         for variable_id in sorted(collector.variable_ids):
             # Get the concatenated variable name (var_{id}_{name})
             # Uses System.json names if available
             variable_name = collector.get_variable_name(variable_id)
-            
+
             # Initialize each variable to 0
             # In RPG Maker, variables default to 0 when a new game starts
             output_lines.append(f"    {variable_name} = 0")
-        
-        # Add a blank line for readability
+
+        # Add a trailing blank line
         output_lines.append("")
 
-    # ── Self-Switches ──
-    # Emit only if there are self-switches in the collection
-    if collector.self_switches:
-        output_lines.append("    # ── Self-Switches ──")
-        
-        # Iterate over self-switches in sorted order
-        # Sorting by (event_id, channel) ensures consistent output
-        for event_id, channel in sorted(collector.self_switches):
-            # Initialize each self-switch to False (OFF state)
-            # The variable name includes both event_id and channel for uniqueness
-            output_lines.append(f"    selfswitch_{event_id}_{channel} = False")
-        
-        # Add a blank line for readability
-        output_lines.append("")
+    # Join all lines with newlines and return
+    return join_with_interlines(output_lines, interlines)
+
+
+def generate_global_items_rpy(collector: DataCollector, interlines: int = 0) -> str:
+    """Generate global_items.rpy with default item inventory declarations.
+
+    Creates a .rpy file containing `init python in game_items:` assignments for every
+    item discovered during the collection phase.
+
+    Store: game_items
+    Reference: game_items.item_{id}
+
+    Args:
+        collector: DataCollector instance populated with item data.
+            Required attributes:
+            - item_ids: set of item IDs
+        interlines: Number of blank lines to insert between each output line.
+            Default 0 means no extra spacing.
+
+    Returns:
+        Complete .rpy source string for global_items.rpy.
+        Returns empty string if no items were collected.
+
+    Example:
+        >>> collector = DataCollector()
+        >>> # ... populate collector with item_ids ...
+        >>> source = generate_global_items_rpy(collector)
+        >>> with open("global_items.rpy", "w") as f:
+        ...     f.write(source)
+
+    Note:
+        The generated file uses a Ren'Py named store (game_items) so all
+        item references in other .rpy files must be prefixed with game_items.
+    """
+    # Initialize the output lines list
+    output_lines: list[str] = []
+
+    # ── File Header ──
+    # Emit a decorative header with section marker
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("# ITEMS")
+    output_lines.append("# Auto-generated from RPG Maker MV")
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("")
 
     # ── Items ──
     # Emit only if there are items in the collection
     if collector.item_ids:
-        output_lines.append("    # ── Items ──")
-        
+        # Use the game_items named store for clean namespace separation
+        output_lines.append("init python in game_items:")
+        output_lines.append("")
+
         # Iterate over items in sorted order for consistent output
         for item_id in sorted(collector.item_ids):
             # Initialize each item quantity to 0 (not in inventory)
             output_lines.append(f"    item_{item_id} = 0")
-        
-        # Add a blank line for readability
+
+        # Add a trailing blank line
         output_lines.append("")
 
+    # Join all lines with newlines and return
+    return join_with_interlines(output_lines, interlines)
+
+
+def generate_global_economy_rpy(interlines: int = 0) -> str:
+    """Generate global_economy.rpy with the gold (currency) declaration.
+
+    Creates a .rpy file containing `init python in game_economy:` with the
+    gold variable initialized to 0.
+
+    Store: game_economy
+    Reference: game_economy.gold
+
+    Args:
+        interlines: Number of blank lines to insert between each output line.
+            Default 0 means no extra spacing.
+
+    Returns:
+        Complete .rpy source string for global_economy.rpy.
+
+    Example:
+        >>> source = generate_global_economy_rpy()
+        >>> with open("global_economy.rpy", "w") as f:
+        ...     f.write(source)
+
+    Note:
+        Gold is always emitted regardless of whether any gold-changing commands
+        were found in the map data, since the economy system is fundamental
+        to most RPG games.
+    """
+    # Initialize the output lines list
+    output_lines: list[str] = []
+
+    # ── File Header ──
+    # Emit a decorative header with section marker
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("# ECONOMY")
+    output_lines.append("# Auto-generated from RPG Maker MV")
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("")
+
     # ── Gold ──
-    # Gold is always initialized (always needed for the game)
-    output_lines.append("    # ── Gold ──")
-    
+    # Use the game_economy named store for the currency system
+    output_lines.append("init python in game_economy:")
+    output_lines.append("")
+
     # Initialize gold to 0 (starting with no money)
     # Game designers can modify this value for different starting conditions
     output_lines.append("    gold = 0")
-    
-    # Add a blank line for readability
-    output_lines.append("")
 
-    # ── Quest Log ──
-    # Quest log is always initialized (used by plugin commands)
-    output_lines.append("    # ── Quest Log ──")
-    
-    # Initialize quest_log as an empty list
-    # Quests are added via plugin commands during gameplay
-    output_lines.append("    quest_log = []")
-    
     # Add a trailing blank line
     output_lines.append("")
 
     # Join all lines with newlines and return
-    # Uses join_with_interlines to add blank lines only between code lines,
-    # skipping comment lines and empty lines for compact output
+    return join_with_interlines(output_lines, interlines)
+
+
+def generate_global_quests_rpy(interlines: int = 0) -> str:
+    """Generate global_quests.rpy with the quest log declaration.
+
+    Creates a .rpy file containing `init python in game_quest:` with the
+    quest_log variable initialized to an empty list.
+
+    Store: game_quest
+    Reference: game_quest.quest_log
+
+    Args:
+        interlines: Number of blank lines to insert between each output line.
+            Default 0 means no extra spacing.
+
+    Returns:
+        Complete .rpy source string for global_quests.rpy.
+
+    Example:
+        >>> source = generate_global_quests_rpy()
+        >>> with open("global_quests.rpy", "w") as f:
+        ...     f.write(source)
+
+    Note:
+        Quest log is always emitted since it's used by plugin commands
+        (e.g., Quest system) that may be present in any map.
+    """
+    # Initialize the output lines list
+    output_lines: list[str] = []
+
+    # ── File Header ──
+    # Emit a decorative header with section marker
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("# QUEST LOG")
+    output_lines.append("# Auto-generated from RPG Maker MV")
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("")
+
+    # ── Quest Log ──
+    # Use the game_quest named store for quest tracking
+    output_lines.append("init python in game_quest:")
+    output_lines.append("")
+
+    # Initialize quest_log as an empty list
+    # Quests are added via plugin commands during gameplay
+    output_lines.append("    quest_log = []")
+
+    # Add a trailing blank line
+    output_lines.append("")
+
+    # Join all lines with newlines and return
+    return join_with_interlines(output_lines, interlines)
+
+
+def generate_map_switches_rpy(
+    collector: DataCollector,
+    map_id: int,
+    map_name: str,
+    interlines: int = 0,
+) -> str:
+    """Generate a per-map self-switch declaration file.
+
+    Creates a .rpy file containing `init python in map_{id}_{name}:` assignments for every
+    self-switch that belongs to the specified map.
+
+    Store: map_{id}_{sanitized_name}
+    Reference: map_{id}_{name}.switch_{event_id}_{channel}
+
+    Self-switches are event-local booleans (A/B/C/D channels) that are unique to
+    a specific event on a specific map. Unlike global switches, they don't persist
+    across maps and are keyed by both the event ID and the channel letter.
+
+    Args:
+        collector: DataCollector instance populated with self-switch data.
+            Required attributes:
+            - self_switches: dict mapping map_id to set of (event_id, channel) tuples
+            - get_self_switch_store_name(map_id): returns store name like "map_1_checkpoint"
+        map_id: The numeric ID of this map (from filename or MapInfos.json).
+        map_name: The human-readable name of this map for header comments.
+        interlines: Number of blank lines to insert between each output line.
+            Default 0 means no extra spacing.
+
+    Returns:
+        Complete .rpy source string for the per-map self-switch file.
+        Returns empty string if no self-switches exist for this map.
+
+    Example:
+        >>> collector = DataCollector()
+        >>> # ... populate collector with self_switches data ...
+        >>> source = generate_map_switches_rpy(collector, 1, "Checkpoint")
+        >>> if source:
+        ...     with open("map_1_Checkpoint_switches.rpy", "w") as f:
+        ...         f.write(source)
+
+    Note:
+        The per-map self-switch file should be placed in the same directory as
+        the map's .rpy event file so Ren'Py can find both files together.
+    """
+    # Check if this map has any self-switches
+    # If not, return empty string (no file needs to be generated)
+    map_self_switches = collector.self_switches.get(map_id, set())
+    if not map_self_switches:
+        return ""
+
+    # Initialize the output lines list
+    output_lines: list[str] = []
+
+    # ── File Header ──
+    # Emit a decorative header with map name and ID for debugging
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append(f"# SELF-SWITCHES — Map {map_id}: {map_name}")
+    output_lines.append("# Auto-generated from RPG Maker MV")
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("")
+
+    # Get the Ren'Py named store name for this map
+    # This is used as the store namespace (e.g., "map_1_checkpoint")
+    store_name = collector.get_self_switch_store_name(map_id)
+
+    # ── Self-Switches ──
+    # Use the per-map named store for self-switch declarations
+    output_lines.append(f"init python in {store_name}:")
+    output_lines.append("")
+
+    # Iterate over self-switches in sorted order
+    # Sorting by (event_id, channel) ensures consistent output
+    for event_id, channel in sorted(map_self_switches):
+        # Each self-switch is a simple boolean flag
+        # The variable name combines event_id and channel for uniqueness within the store
+        output_lines.append(f"    switch_{event_id}_{channel} = False")
+
+    # Add a trailing blank line
+    output_lines.append("")
+
+    # Join all lines with newlines and return
     return join_with_interlines(output_lines, interlines)

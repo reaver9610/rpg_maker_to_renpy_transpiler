@@ -483,10 +483,10 @@ def join_with_interlines(lines: list[str], interlines: int) -> str:
             # Determine if the current line is a comment or empty
             # Comments start with "#" (possibly indented)
             # Empty lines are intentional structural separators already in the buffer
-            current_is_comment_or_empty = line.startswith("#") or line.strip() == ""
+            current_is_comment_or_empty = line.lstrip().startswith("#") or line.strip() == ""
 
             # Determine if the next line is a comment or empty
-            next_is_comment_or_empty = next_line.startswith("#") or next_line.strip() == ""
+            next_is_comment_or_empty = next_line.lstrip().startswith("#") or next_line.strip() == ""
 
             # Only add interlines spacing when both lines are regular code
             if not current_is_comment_or_empty and not next_is_comment_or_empty:

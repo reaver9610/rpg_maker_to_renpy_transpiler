@@ -171,11 +171,39 @@ def parse_args() -> argparse.Namespace:
         help="Apply interlines to characters.rpy"
     )
     argument_parser.add_argument(
-        "--switches",
+        "--global-switches",
         action="store_true",
-        dest="interlines_switches",
+        dest="interlines_global_switches",
         default=False,
-        help="Apply interlines to switches.rpy"
+        help="Apply interlines to global_switches.rpy"
+    )
+    argument_parser.add_argument(
+        "--global-variables",
+        action="store_true",
+        dest="interlines_global_variables",
+        default=False,
+        help="Apply interlines to global_variables.rpy"
+    )
+    argument_parser.add_argument(
+        "--global-items",
+        action="store_true",
+        dest="interlines_global_items",
+        default=False,
+        help="Apply interlines to global_items.rpy"
+    )
+    argument_parser.add_argument(
+        "--global-economy",
+        action="store_true",
+        dest="interlines_global_economy",
+        default=False,
+        help="Apply interlines to global_economy.rpy"
+    )
+    argument_parser.add_argument(
+        "--global-quests",
+        action="store_true",
+        dest="interlines_global_quests",
+        default=False,
+        help="Apply interlines to global_quests.rpy"
     )
     argument_parser.add_argument(
         "--side-images",
@@ -264,12 +292,20 @@ def parse_args() -> argparse.Namespace:
         
     if getattr(args, "interlines_all", False):
         # --all: apply to all file types
-        interlines_targets = {"maps", "characters", "switches", "side_images", "game_flow"}
+        interlines_targets = {
+            "maps", "characters", "global_switches", "global_variables",
+            "global_items", "global_economy", "global_quests",
+            "side_images", "game_flow",
+        }
     elif args.interlines > 0:
         # -n was used, check for specific targets
         if (getattr(args, "interlines_maps", False) or
             getattr(args, "interlines_characters", False) or
-            getattr(args, "interlines_switches", False) or
+            getattr(args, "interlines_global_switches", False) or
+            getattr(args, "interlines_global_variables", False) or
+            getattr(args, "interlines_global_items", False) or
+            getattr(args, "interlines_global_economy", False) or
+            getattr(args, "interlines_global_quests", False) or
             getattr(args, "interlines_side_images", False) or
             getattr(args, "interlines_game_flow", False)):
             # Specific targets specified, use those
@@ -277,8 +313,16 @@ def parse_args() -> argparse.Namespace:
                 interlines_targets.add("maps")
             if getattr(args, "interlines_characters", False):
                 interlines_targets.add("characters")
-            if getattr(args, "interlines_switches", False):
-                interlines_targets.add("switches")
+            if getattr(args, "interlines_global_switches", False):
+                interlines_targets.add("global_switches")
+            if getattr(args, "interlines_global_variables", False):
+                interlines_targets.add("global_variables")
+            if getattr(args, "interlines_global_items", False):
+                interlines_targets.add("global_items")
+            if getattr(args, "interlines_global_economy", False):
+                interlines_targets.add("global_economy")
+            if getattr(args, "interlines_global_quests", False):
+                interlines_targets.add("global_quests")
             if getattr(args, "interlines_side_images", False):
                 interlines_targets.add("side_images")
             if getattr(args, "interlines_game_flow", False):
