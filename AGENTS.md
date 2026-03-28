@@ -37,15 +37,57 @@ outputs/
   global_economy.rpy                      # init python in game_economy:
   global_quests.rpy                       # init python in game_quest:
   side_images.rpy                         # image side claire 0 = ...
-  game_flow.rpy                           # label start: / label map_1_enter:
+  game_flow.rpy                           # label start: jump map_1_Checkpoint
   maps/
     map_1_Checkpoint/
-      map_1_Checkpoint.rpy                # label event_3_auto: ...
+      map_1_Checkpoint.rpy                # label map_1_Checkpoint: call .event_3_auto; return
       map_1_Checkpoint_switches.rpy       # init python in map_1_checkpoint:
+      map_1_Checkpoint_events/            # events subfolder
+        map_1_Checkpoint_autorun_3.rpy    # label map_1_Checkpoint.event_3_auto: ...
+        map_1_Checkpoint_event_2.rpy      # label map_1_Checkpoint.event_2: ...
+        map_1_Checkpoint_event_4.rpy      # label map_1_Checkpoint.event_4: ...
     map_3_Refugee_Camp/
       map_3_Refugee_Camp.rpy
       map_3_Refugee_Camp_switches.rpy
+      map_3_Refugee_Camp_events/
+        map_3_Refugee_Camp_autorun_57.rpy
+        map_3_Refugee_Camp_event_1.rpy
 ```
+
+### Local Label Convention
+
+Events use Ren'Py **fully qualified local labels** declared in separate files:
+
+```rpy
+# Map placeholder (map_3_Refugee_Camp.rpy)
+label map_3_Refugee_Camp:
+    call .event_57_auto
+    call .event_39_roadblock
+    return
+
+# Autorun event (map_3_Refugee_Camp_autorun_57.rpy)
+label map_3_Refugee_Camp.event_57_auto:
+    Claire "Welcome!"
+    return
+
+# Regular event (map_3_Refugee_Camp_event_11.rpy)
+label map_3_Refugee_Camp.event_11_torch:
+    return
+```
+
+- **Declaration**: `label {global_label}.{local_label}:` in the event file (e.g., `label map_3_Refugee_Camp.event_11:`)
+- **Short-form call**: `call .event_X_name` within the same global label namespace
+- **Cross-file call**: `call map_3_Refugee_Camp.event_11` from anywhere
+- **Map label naming**: `safe_map_label(map_id, map_name)` → `map_{id}_{Title_Case_Name}`
+
+### Empty Event Filtering
+
+Events with no meaningful commands (only `label` + `return`) are automatically
+skipped. These represent decorative RPG Maker elements (torches, glowns, etc.)
+with no dialogue or gameplay logic. Approximately 36% of events are filtered.
+
+Detection: after generating source, check for any non-comment, non-label,
+non-return lines. If none found, the event file is not written.
 
 ### Store Reference Patterns
 
@@ -57,6 +99,8 @@ outputs/
 | Item | `game_items` | `game_items.item_1` |
 | Gold | `game_economy` | `game_economy.gold` |
 | Quest Log | `game_quest` | `game_quest.quest_log` |
+| Map Label | — | `label map_3_Refugee_Camp:` |
+| Event Local Label | — | `label map_3_Refugee_Camp.event_11:` |
 
 ## Running the Transpiler
 
@@ -199,8 +243,8 @@ No linter or formatter is configured (no ruff, flake8, black, mypy, etc.). If ad
 ### Package Modules
 - `constants.py` — `CMD` dict mapping RPG Maker command codes to readable names
 - `collector.py` — `DataCollector` class scans map JSON to collect character names, switch/variable IDs, self-switches, items
-- `helpers.py` — Pure utility functions: `safe_var()`, `safe_label()`, `clean_text()`, `clean_text_preserve_lines()`, `side_image_tag()`
-- `generator.py` — `RenPyGenerator` class generates `.rpy` source from a single map's event data
+- `helpers.py` — Pure utility functions: `safe_var()`, `safe_label()`, `safe_map_label()`, `clean_text()`, `clean_text_preserve_lines()`, `side_image_tag()`
+- `generator.py` — `RenPyGenerator` class + `MapGenerationResult` dataclass; generates split `.rpy` source from a single map's event data
 - `characters.py` — `generate_characters_rpy()` + `_get_character_color()` helper
 - `switches.py` — `generate_global_switches_rpy()`, `generate_global_variables_rpy()`, `generate_global_items_rpy()`, `generate_global_economy_rpy()`, `generate_global_quests_rpy()`, `generate_map_switches_rpy()`
 - `game_flow.py` — `generate_game_flow_rpy()`
@@ -211,7 +255,7 @@ No linter or formatter is configured (no ruff, flake8, black, mypy, etc.). If ad
 - Classes: PascalCase (`DataCollector`, `RenPyGenerator`)
 - Functions/methods: snake_case (`collect_from_map`, `_emit_conditional_block`)
 - Private methods: prefix with underscore (`_emit`, `_flush_text`)
-- Module-level helpers: no underscore prefix (`safe_var`, `safe_label`, `clean_text`)
+- Module-level helpers: no underscore prefix (`safe_var`, `safe_label`, `safe_map_label`, `clean_text`)
 - Constants: UPPER_SNAKE_CASE in `CMD` dict
 - RPG Maker IDs in variable names: `switch_id`, `map_id`, `event_id`, `self_switch_ch`
 
@@ -235,9 +279,16 @@ No linter or formatter is configured (no ruff, flake8, black, mypy, etc.). If ad
 ### General Patterns
 - Text accumulation pattern: buffer text lines, flush on command boundaries (`_flush_text()`)
 - Indentation tracking: `_push()`/`_pop()` for Ren'Py indentation
-- Pure functions as module-level exports: `safe_var()`, `safe_label()`, `clean_text()`
+- Pure functions as module-level exports: `safe_var()`, `safe_label()`, `safe_map_label()`, `clean_text()`
 - Use `re.sub()` for regex replacements, `str.replace()` for simple substitutions
 - Output generation: build `list[str]` of lines, join with `"\n"` at the end
+- Split file output: one `.rpy` per map (placeholder), per event (autorun + regular)
+- Events subfolder: `{map_label_name}_events/` holds all event `.rpy` files
+- Empty event filtering: events with only `label` + `return` are skipped (decorative elements)
+- Local labels: fully qualified form `label map_{id}_{Name}.event_{id}_{name}:` in event files
+- Short-form calls: `call .event_{id}_{name}` within the same global label namespace
+- Map label naming: `safe_map_label()` → `map_{id}_{Title_Case_Name}` (consistent across files)
+- `MapGenerationResult`: dataclass returned by `generate()` with `map_label`, `autorun` dict, `events` dict
 
 ### Formatting
 - 4-space indentation
