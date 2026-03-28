@@ -1,33 +1,33 @@
-"""Generates game_flow.rpy that handles map navigation and entry points.
+"""Generates game_flow.rpy that handles the game's starting entry point.
 
-This module creates the game_flow.rpy file providing the top-level navigation
-structure for the Ren'Py game. It defines entry points for each map and
-connects them via jump statements.
+This module creates the game_flow.rpy file providing the ``label start:``
+entry point for the Ren'Py game.
 
-Navigation Architecture:
-Ren'Py visual novels typically use labels for scene/location transitions:
+Navigation Architecture (new per-file structure):
+Each map has its own placeholder file that defines the global label::
+
+    # game_flow.rpy
     label start:
-        jump map_1_enter
+        jump map_1_Checkpoint
 
-    label map_1_enter:
-        call map_1_events
+    # maps/map_3_Refugee_Camp/map_3_Refugee_Camp.rpy
+    label map_3_Refugee_Camp:
+        call .event_3_auto
+        call .event_39_roadblock_setup
         return
 
-This module generates this structure automatically from the collected map data.
+    # maps/map_3_Refugee_Camp/map_3_Refugee_Camp_autorun_3.rpy
+    label map_3_Refugee_Camp.event_3_auto:
+        # autorun content
+        return
 
-Map Entry Labels:
-Each map gets two labels:
-1. map_{id}_enter: Entry point called from game_flow or transfers
-2. map_{id}_events: Defined in the map's .rpy file, contains actual events
+    # maps/map_3_Refugee_Camp/map_3_Refugee_Camp_event_11.rpy
+    label map_3_Refugee_Camp.event_11:
+        # event content
+        return
 
-The separation allows for pre-entry logic (e.g., checking conditions) to be
-added to the _enter label without modifying the events file.
-
-Transfer Handling:
-When the generator encounters a TRANSFER_PLAYER command, it emits:
-    jump map_{target_id}_enter
-
-This navigates to the target map's entry label, creating a seamless flow.
+Transfers between maps use ``jump map_{id}_{Name}`` targeting the global
+label defined in each map's placeholder file.
 
 Output File Structure:
     # ═══════════════════════════════════════════════════
@@ -37,23 +37,14 @@ Output File Structure:
 
     label start:
         # Change this to your starting map
-        # jump map_1_enter  # Town Square
-        # jump map_2_enter  # Forest Path
-        jump map_1_enter  # Default: first map
-
-    label map_1_enter:
-        # Town Square
-        call map_1_events
-        return
-
-    label map_2_enter:
-        # Forest Path
-        call map_2_events
-        return
+        # jump map_1_Checkpoint
+        # jump map_2_Hookton_Village
+        # jump map_3_Refugee_Camp
+        jump map_1_Checkpoint
 """
 
 from .collector import DataCollector
-from .helpers import join_with_interlines
+from .helpers import safe_map_label, join_with_interlines
 
 
 def generate_game_flow_rpy(
@@ -61,64 +52,35 @@ def generate_game_flow_rpy(
     collector: DataCollector,
     interlines: int = 0,
 ) -> str:
-    """Generate game_flow.rpy that handles map navigation and entry points.
+    """Generate game_flow.rpy with the ``start`` entry point.
 
-    Creates a .rpy file with:
-    - A `start` label that jumps to the first map (configurable)
-    - A `map_{id}_enter` label for each map that calls its event handler
+    Creates a minimal .rpy file containing only the ``label start:``
+    label.  Map entry labels (``label map_{id}_{Name}:``) live in their
+    respective map placeholder files, not here.
 
-    This provides the top-level navigation structure for the Ren'Py game.
-    Players navigate between maps via TRANSFER_PLAYER commands, which are
-    translated to jump statements.
-
-    Start Label:
-    The `start` label is Ren'Py's entry point. By default, it jumps to map_1.
-    The generated file includes commented-out alternatives for easy configuration:
-        label start:
-            # Change this to your starting map
-            # jump map_1_enter  # Town Square
-            # jump map_2_enter  # Forest Path
-            jump map_1_enter  # Default
-
-    Map Entry Labels:
-    Each map gets an entry label that:
-    1. Shows the map's display name in a comment
-    2. Calls the map's events label (defined in map_{id}_events.rpy)
-    3. Returns to the caller
+    The ``start`` label jumps to the first map's global label.
+    Commented-out alternatives for every map are included for easy
+    reconfiguration by the game designer.
 
     Args:
-        all_map_data: Maps map_id → parsed JSON data for each transpiled map.
-        Used to get display names for comments.
+        all_map_data: Maps ``map_id`` → parsed JSON data for each map.
+            Used to list available maps in comments and determine the default.
         collector: DataCollector instance with map name metadata.
-        Used to retrieve display names for map IDs.
+            Used to retrieve display names for map IDs.
         interlines: Number of blank lines to insert between each output line.
-        Default 0 means no extra spacing.
+            ``0`` means no extra spacing.
 
-        Returns:
+    Returns:
         Complete .rpy source string for game_flow.rpy.
-        Ready to be written to a file.
 
     Example:
-        >>> all_map_data = {1: map1_json, 2: map2_json}
-        >>> collector = DataCollector()
-        >>> # ... populate collector ...
         >>> source = generate_game_flow_rpy(all_map_data, collector)
         >>> with open("game_flow.rpy", "w") as f:
         ...     f.write(source)
-
-    Note:
-        The generated file assumes map event files (map_{id}_*.rpy) exist.
-        These are generated by RenPyGenerator in parallel with this file.
-
-    Note:
-        The default starting map is map_1. Game designers should edit
-        the start label to change the initial map.
     """
-    # Initialize the output lines list
     output_lines: list[str] = []
 
     # ── File Header ──
-    # Emit a decorative header with section marker
     output_lines.append("# ═══════════════════════════════════════════════════")
     output_lines.append("# GAME FLOW — Map Navigation")
     output_lines.append("# Auto-generated from RPG Maker MV")
@@ -126,51 +88,24 @@ def generate_game_flow_rpy(
     output_lines.append("")
 
     # ── Start Label ──
-    # The start label is Ren'Py's entry point for the game
     output_lines.append("label start:")
-    
-    # Add an instruction comment for game designers
-    output_lines.append("    # Change this to your starting map")
-    
+
     # List all available maps as commented-out alternatives
-    # This makes it easy for designers to change the starting map
+    output_lines.append("    # Change this to your starting map")
     for map_id in sorted(all_map_data.keys()):
-        # Get the map's display name for the comment
-        map_name = all_map_data[map_id].get("displayName", f"Map {map_id}")
-        # Emit the commented-out jump statement with map name
-        output_lines.append(f"    # jump map_{map_id}_enter  # {map_name}")
-    
-    # Emit the default jump to map_1
-    # Most games start at the first map
-    output_lines.append("    jump map_1_enter")
-    
-    # Add blank lines for separation
-    output_lines.append("")
+        map_name = collector.map_names.get(map_id) or all_map_data[map_id].get("displayName", f"Map {map_id}")
+        label = safe_map_label(map_id, map_name)
+        output_lines.append(f"    # jump {label}  # {map_name}")
+
+    # Emit the default jump to the first map
+    first_map_id = min(all_map_data.keys()) if all_map_data else 1
+    first_map_name = (
+        collector.map_names.get(first_map_id)
+        or all_map_data.get(first_map_id, {}).get("displayName", f"Map{first_map_id}")
+    )
+    first_label = safe_map_label(first_map_id, first_map_name)
+    output_lines.append(f"    jump {first_label}")
+
     output_lines.append("")
 
-    # ── Map Entry Labels ──
-    # Generate an entry label for each map
-    for map_id, map_data in sorted(all_map_data.items()):
-        # Get the map's display name
-        map_name = map_data.get("displayName", f"Map {map_id}")
-        
-        # Emit the map entry label
-        output_lines.append(f"label map_{map_id}_enter:")
-        
-        # Emit a comment showing the map's display name
-        output_lines.append(f"    # {map_name}")
-        
-        # Emit the call to the map's events label
-        # The events label is defined in the map's .rpy file (generated by RenPyGenerator)
-        output_lines.append(f"    call map_{map_id}_events")
-        
-        # Emit the return statement
-        output_lines.append("    return")
-        
-    # Add a blank line for readability
-    output_lines.append("")
-
-    # Join all lines with newlines and return
-    # Uses join_with_interlines to add blank lines only between code lines,
-    # skipping comment lines and empty lines for compact output
     return join_with_interlines(output_lines, interlines)

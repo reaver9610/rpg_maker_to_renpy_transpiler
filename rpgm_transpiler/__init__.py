@@ -25,9 +25,11 @@ Multiple generators produce output files using Ren'Py named stores:
 - global_economy.rpy: Player currency in the game_economy store
 - global_quests.rpy: Quest tracking in the game_quest store
 - side_images.rpy: Side image declarations
-- map_{id}_*.rpy: Event handlers for each map
-- map_{id}_*_switches.rpy: Per-map self-switches in map-specific stores
-- game_flow.rpy: Navigation labels and entry points
+- map_{id}_{Name}.rpy: Map placeholder (global label + autorun calls)
+- map_{id}_{Name}_autorun_{eid}.rpy: One per autorun event (local labels)
+- map_{id}_{Name}_event_{eid}.rpy: One per regular event (local labels)
+- map_{id}_{Name}_switches.rpy: Per-map self-switches in map-specific stores
+- game_flow.rpy: Start entry point
 
 Public API:
     transpile_to_renpy: Main entry point that processes input files and writes output.
@@ -70,7 +72,7 @@ import re
 from pathlib import Path
 
 from .collector import DataCollector
-from .generator import RenPyGenerator
+from .generator import RenPyGenerator, MapGenerationResult
 from .characters import generate_characters_rpy
 from .switches import (
     generate_global_switches_rpy,
@@ -82,13 +84,13 @@ from .switches import (
 )
 from .game_flow import generate_game_flow_rpy
 from .side_images import generate_side_images_rpy
-from .helpers import to_title_case
-
+from .helpers import to_title_case, safe_map_label
 
 __all__ = [
     "transpile_to_renpy",
     "DataCollector",
     "RenPyGenerator",
+    "MapGenerationResult",
     "generate_characters_rpy",
     "generate_side_images_rpy",
     "generate_global_switches_rpy",
@@ -125,8 +127,8 @@ def transpile_to_renpy(
     8. Generate global_economy.rpy (game_economy store: gold)
     9. Generate global_quests.rpy (game_quest store: quest_log)
     10. Generate side_images.rpy (side image declarations per face ID)
-    11. Generate a .rpy file for each map's events + per-map self-switch file
-    12. Generate game_flow.rpy (map navigation labels)
+    11. Generate per-map files (placeholder, autorun, events, switches)
+    12. Generate game_flow.rpy (start entry point)
 
     Output Files:
     For input maps Map001.json and Map002.json with display names "Town" and "Forest":
@@ -137,11 +139,11 @@ def transpile_to_renpy(
     - outputs/global_economy.rpy: game_economy store (gold)
     - outputs/global_quests.rpy: game_quest store (quest_log)
     - outputs/side_images.rpy: Side image declarations
-    - outputs/maps/map_1_Town/map_1_Town.rpy: Town events
-    - outputs/maps/map_1_Town/map_1_Town_switches.rpy: Town self-switches
-    - outputs/maps/map_2_Forest/map_2_Forest.rpy: Forest events
-    - outputs/maps/map_2_Forest/map_2_Forest_switches.rpy: Forest self-switches
-    - outputs/game_flow.rpy: Navigation structure
+    - outputs/maps/.../map_1_Town.rpy: Map placeholder (label map_1_Town:)
+    - outputs/maps/.../map_1_Town_autorun_3.rpy: Autorun event (local label)
+    - outputs/maps/.../map_1_Town_event_11.rpy: Regular event (local label)
+    - outputs/maps/.../map_1_Town_switches.rpy: Town self-switches
+    - outputs/game_flow.rpy: Start entry point
 
     Args:
         input_paths: List of filesystem paths to RPG Maker MV .json map files.
@@ -174,6 +176,8 @@ def transpile_to_renpy(
         [OK] renpy_output/global_quests.rpy
         [OK] renpy_output/side_images.rpy
         [OK] renpy_output/maps/map_1_Town/map_1_Town.rpy
+        [OK] renpy_output/maps/map_1_Town/map_1_Town_autorun_3.rpy
+        [OK] renpy_output/maps/map_1_Town/map_1_Town_event_11.rpy
         [OK] renpy_output/maps/map_1_Town/map_1_Town_switches.rpy
         [OK] renpy_output/game_flow.rpy
 
@@ -493,87 +497,83 @@ def transpile_to_renpy(
     print(f"[OK] {side_images_path}")
 
     # ═══════════════════════════════════════════════════════════════════
-    # PHASE 5: Generate a .rpy file for each map's events
+    # PHASE 5: Generate per-map files (placeholder, autorun, events)
     # ═══════════════════════════════════════════════════════════════════
-    
-    # Process maps in sorted order for consistent output
+
+    # Each map now produces multiple files:
+    #   map_{id}_{Name}.rpy                        — global label placeholder
+    #   map_{id}_{Name}_switches.rpy               — per-map self-switches
+    #   map_{id}_{Name}_events/                     — events subfolder
+    #       map_{id}_{Name}_autorun_{eid}.rpy      — one per autorun event
+    #       map_{id}_{Name}_event_{eid}.rpy        — one per regular event
+
+    # Helper to write a file and log it
+    def _write_file(path: str, content: str) -> None:
+        """Write content to a file and print a success message."""
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(content)
+        print(f"[OK] {path}")
+
     for map_id, map_data in sorted(all_map_data.items()):
-        # Create a generator instance for this map
-        # The generator needs:
-        # - map_data: The parsed JSON for this map
-        # - collector: The shared collector with all discovered data
-        # - map_id: The numeric ID of this map
-        # - all_map_data: All maps (for cross-map transfer references)
-        # - multiline: Whether to emit triple-quoted strings
-        # - interlines: Number of blank lines between output lines
-        # - map_name: Human-readable name from MapInfos.json (or None for fallback)
+        # Resolve the human-readable map name for this map
         map_name_for_header = map_infos[map_id]["name"] if map_id in map_infos else None
         map_interlines = interlines if "maps" in interlines_targets else 0
-        generator = RenPyGenerator(
-            map_data, collector, map_id, all_map_data, 
-            multiline=multiline, interlines=map_interlines,
-            map_name=map_name_for_header
-        )
-        
-        # Generate the Ren'Py source
-        map_script_source = generator.generate()
 
-        # Build the output filename and folder structure
-        # If MapInfos.json was loaded, use hierarchical folder structure
-        # Otherwise, fall back to flat structure
+        # Create a generator instance for this map
+        generator = RenPyGenerator(
+            map_data, collector, map_id, all_map_data,
+            multiline=multiline, interlines=map_interlines,
+            map_name=map_name_for_header,
+        )
+
+        # Generate split output: map placeholder, autorun files, event files
+        result = generator.generate()
+
+        # ── Determine output directory for this map ──
         if map_id in map_folder_paths:
-            # Use hierarchical folder structure
-            folder_path = map_folder_paths[map_id]
-            
-            # Create the maps base directory if it doesn't exist
+            # Use hierarchical folder structure from MapInfos.json
             maps_base_dir = os.path.join(output_dir, "maps")
             os.makedirs(maps_base_dir, exist_ok=True)
-            
-            # Create the full folder path
-            full_folder_path = os.path.join(maps_base_dir, folder_path)
+            full_folder_path = os.path.join(maps_base_dir, map_folder_paths[map_id])
             os.makedirs(full_folder_path, exist_ok=True)
-            
-            # Get map name from MapInfos for filename
-            if map_id in map_infos:
-                map_name = to_title_case(map_infos[map_id]["name"])
-            else:
-                # Fallback to displayName from map data
-                map_display_name = map_data.get("displayName", f"map_{map_id}")
-                map_name = re.sub(r"[^a-z0-9_]", "_", map_display_name.lower())
-            
-            # Build the full filename
-            output_filename = f"map_{map_id}_{map_name}.rpy"
-            
-            # Build the full output path
-            output_path = os.path.join(full_folder_path, output_filename)
         else:
             # Fallback to flat structure (no MapInfos.json loaded)
-            map_display_name = map_data.get("displayName", f"map_{map_id}")
-            safe_filename = re.sub(r"[^a-z0-9_]", "_", map_display_name.lower())
-            output_filename = f"map_{map_id}_{safe_filename}.rpy"
-            output_path = os.path.join(output_dir, output_filename)
+            full_folder_path = output_dir
 
-        # Write the file
-        with open(output_path, "w", encoding="utf-8") as output_file:
-            output_file.write(map_script_source)
-        
-        # Log success
-        print(f"[OK] {output_path}")
+        # ── Base path for all files of this map ──
+        # Uses the map_label_name from the generator for consistency
+        # Example: "map_3_Refugee_Camp" → "maps/.../map_3_Refugee_Camp"
+        base_path = os.path.join(full_folder_path, result.map_label_name)
 
-        # ── Generate per-map self-switch file ──
-        # Each map with self-switches gets a companion _switches.rpy file
-        # placed in the same directory as the map's event .rpy file
-        map_name_for_switches = map_name_for_header or map_data.get("displayName", f"Map{map_id}")
+        # ── Write map placeholder: map_{id}_{Name}.rpy ──
+        # Contains: label map_{id}_{Name}: call .autorun; return
+        _write_file(f"{base_path}.rpy", result.map_label)
+
+        # ── Write event files into events subfolder ──
+        # Only create the subfolder if there are events to write
+        if result.autorun or result.events:
+            events_dir = os.path.join(full_folder_path, f"{result.map_label_name}_events")
+            os.makedirs(events_dir, exist_ok=True)
+
+            # Write autorun files: map_{id}_{Name}_autorun_{eid}.rpy
+            for event_id, source in result.autorun.items():
+                autorun_path = os.path.join(events_dir, f"{result.map_label_name}_autorun_{event_id}.rpy")
+                _write_file(autorun_path, source)
+
+            # Write event files: map_{id}_{Name}_event_{eid}.rpy
+            for event_id, source in result.events.items():
+                event_path = os.path.join(events_dir, f"{result.map_label_name}_event_{event_id}.rpy")
+                _write_file(event_path, source)
+
+        # ── Write per-map self-switch file ──
+        map_name_raw = map_name_for_header or map_data.get("displayName", f"Map{map_id}")
         map_switches_src = generate_map_switches_rpy(
-            collector, map_id, map_name_for_switches,
+            collector, map_id, map_name_raw,
             interlines=map_interlines,
         )
         if map_switches_src:
-            # Derive the switches filename from the map filename
-            switches_filename = output_path.rsplit(".", 1)[0] + "_switches.rpy"
-            with open(switches_filename, "w", encoding="utf-8") as output_file:
-                output_file.write(map_switches_src)
-            print(f"[OK] {switches_filename}")
+            switches_path = f"{base_path}_switches.rpy"
+            _write_file(switches_path, map_switches_src)
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 6: Generate game_flow.rpy (navigation labels)

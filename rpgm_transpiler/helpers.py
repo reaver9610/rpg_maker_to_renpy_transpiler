@@ -430,6 +430,32 @@ def to_title_case(name: str) -> str:
     return sanitized
 
 
+def safe_map_label(map_id: int, map_name: str) -> str:
+    """Build a safe Ren'Py global label name for a map.
+
+    Constructs a label in the form ``map_{id}_{Title_Case_Name}``, matching the
+    naming convention used for map placeholder files and map entry labels.
+
+    The title-cased name portion uses :func:`to_title_case` to produce a
+    readable, filesystem-safe segment.
+
+    Args:
+        map_id: Numeric map ID (from filename or MapInfos.json).
+        map_name: Raw map name (e.g., "Refugee Camp", "CHECKPOINT").
+
+    Returns:
+        Safe Ren'Py label string.
+        Examples: ``"map_3_Refugee_Camp"``, ``"map_1_Checkpoint"``
+
+    Example:
+        >>> safe_map_label(3, "Refugee Camp")
+        'map_3_Refugee_Camp'
+        >>> safe_map_label(1, "CHECKPOINT")
+        'map_1_Checkpoint'
+    """
+    return f"map_{map_id}_{to_title_case(map_name)}"
+
+
 def join_with_interlines(lines: list[str], interlines: int) -> str:
     """Join output lines with configurable blank-line spacing, skipping comments.
 

@@ -38,11 +38,43 @@ Each event has a comment header showing its ID, name, and position for debugging
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from typing import Any
 
 from .constants import CMD
 from .collector import DataCollector
-from .helpers import safe_var, safe_label, clean_text, clean_text_preserve_lines, join_with_interlines
+from .helpers import (
+    safe_var, safe_label, safe_map_label, clean_text,
+    clean_text_preserve_lines, join_with_interlines,
+)
+
+
+@dataclass
+class MapGenerationResult:
+    """Holds generated Ren'Py source for a single map's components.
+
+    Each field contains a complete .rpy file content string ready to be
+    written to disk. The map placeholder calls each autorun event in
+    sequence, while every event file uses a fully qualified local label
+    under the map's global label.
+
+    Attributes:
+        map_label: Content for the map placeholder file
+            (e.g., ``map_3_Refugee_Camp.rpy``).
+            Contains the global label and calls to autorun events.
+        autorun: Mapping of event ID → file content for each autorun event.
+            Each file defines a fully qualified local label
+            (e.g., ``label map_3_Refugee_Camp.event_3_auto:``).
+        events: Mapping of event ID → file content for each regular event.
+            Each file defines a fully qualified local label
+            (e.g., ``label map_3_Refugee_Camp.event_11:``).
+        map_label_name: The global label name used across all files
+            (e.g., ``"map_3_Refugee_Camp"``).
+    """
+    map_label: str
+    autorun: dict[int, str] = field(default_factory=dict)
+    events: dict[int, str] = field(default_factory=dict)
+    map_label_name: str = ""
 
 
 class RenPyGenerator:
@@ -168,6 +200,11 @@ class RenPyGenerator:
         # Store the map name for use in header comments
         # Priority: provided map_name > displayName from map_data > "Unknown"
         self.map_name = map_name or map_data.get("displayName", "Unknown")
+
+        # Store the global label name for this map
+        # Used for local label qualification: map_{id}_{Title_Case_Name}
+        # Example: "map_3_Refugee_Camp"
+        self.map_label_name = safe_map_label(map_id, self.map_name)
 
         # Store the Ren'Py named store name for this map's self-switches
         # Used in self-switch references: $ map_{id}_{name}.switch_{eid}_{ch} = True
@@ -296,200 +333,280 @@ class RenPyGenerator:
         # max(0, ...) prevents negative indentation
         self.indent_level = max(0, self.indent_level - 1)
 
-    def generate(self) -> str:
-        """Generate the complete .rpy source for this map.
+    def generate(self) -> MapGenerationResult:
+        """Generate Ren'Py source split into map placeholder, autorun, and event files.
 
-        Main entry point for the generator. Orchestrates the emission of
-        the file header and all events, then returns the accumulated output.
+        Main entry point for the generator.  Produces a :class:`MapGenerationResult`
+        whose fields contain the complete .rpy content for:
 
-        Process:
-        1. Emit header comment with map name and ID
-        2. Process all events (autorun events first, then regular events)
-        3. Join accumulated lines with newlines
+        - The map placeholder (global label that calls autorun events)
+        - One file per autorun event (fully qualified local labels)
+        - One file per regular event (fully qualified local labels)
 
         Returns:
-            Complete .rpy file content as a single string.
-            Ready to be written to a file.
+            MapGenerationResult with all generated file contents.
 
         Example:
-            >>> source = generator.generate()
-            >>> print(source)
-            # ═══════════════════════════════════════════════════
-            # Town Square (Map ID: 1)
-            # ...
+            >>> result = generator.generate()
+            >>> result.map_label_name
+            'map_3_Refugee_Camp'
+            >>> result.map_label
+            'label map_3_Refugee_Camp:\\n    call .event_3_auto\\n    return'
         """
-        # Step 1: Emit the file header
-        # This includes the map name, ID, and generation notice
-        self._emit_header()
-        
-        # Step 2: Emit all events
-        # This processes autorun and regular events
-        self._emit_events()
-        
-        # Step 3: Join all lines with newlines and return
-        # This produces the final .rpy file content
-        # Uses join_with_interlines to add blank lines only between code lines,
-        # skipping comment lines and empty lines for compact output
-        return join_with_interlines(self.lines, self.interlines)
+        # Classify events into autorun and regular
+        autorun_events, regular_events = self._classify_events()
+
+        # Generate the map placeholder file
+        map_label = self._generate_map_label(autorun_events)
+
+        # Generate one autorun file per autorun event
+        # Skip empty events (those with no meaningful commands)
+        autorun_files: dict[int, str] = {}
+        for event in autorun_events:
+            event_id, source = self._generate_event_file(event, is_autorun=True)
+            if source is not None:
+                autorun_files[event_id] = source
+
+        # Generate one event file per regular event
+        # Skip empty events (those with no meaningful commands)
+        event_files: dict[int, str] = {}
+        for event in regular_events:
+            event_id, source = self._generate_event_file(event, is_autorun=False)
+            if source is not None:
+                event_files[event_id] = source
+
+        return MapGenerationResult(
+            map_label=map_label,
+            autorun=autorun_files,
+            events=event_files,
+            map_label_name=self.map_label_name,
+        )
+
+    # ── Event Classification ──
+
+    def _classify_events(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Separate map events into autorun and regular categories.
+
+        RPG Maker events have a 'trigger' type on their first page:
+        - Trigger 3 = autorun (fires automatically when map loads)
+        - Any other trigger = regular (action button, touch, parallel, etc.)
+
+        Returns:
+            Two-tuple of (autorun_events, regular_events).
+        """
+        events = self.map_data.get("events", [])
+        autorun_events: list[dict[str, Any]] = []
+        regular_events: list[dict[str, Any]] = []
+
+        for event in events:
+            if event is None:
+                continue
+            pages = event.get("pages", [])
+            if pages and pages[0].get("trigger") == 3:
+                autorun_events.append(event)
+            else:
+                regular_events.append(event)
+
+        return autorun_events, regular_events
+
+    # ── File Generators ──
+
+    def _emit_header_to(self, target_lines: list[str]) -> None:
+        """Write the decorative header comment block into a target line list.
+
+        This is a variant of ``_emit_header`` that writes to an arbitrary
+        ``list[str]`` buffer instead of ``self.lines``, enabling generation
+        of multiple independent files from the same generator instance.
+
+        Args:
+            target_lines: Mutable list to receive the header lines.
+        """
+        header = [
+            "# ═══════════════════════════════════════════════════",
+            f"# {self.map_name} (Map ID: {self.map_id})",
+            "# Auto-generated from RPG Maker MV",
+            "# ═══════════════════════════════════════════════════",
+            "",
+        ]
+        target_lines.extend(header)
 
     def _emit_header(self) -> None:
-        """Write the file header comment block.
-
-        Emits a decorative header with the map's display name and ID.
-        This helps identify which map the file corresponds to when
-        reading the generated Ren'Py code.
+        """Write the file header comment block into ``self.lines``.
 
         Header Format:
             # ═══════════════════════════════════════════════════
             # {map_name} (Map ID: {map_id})
             # Auto-generated from RPG Maker MV
             # ═══════════════════════════════════════════════════
-
-        The double-line characters (═) visually separate the header from content.
         """
-        # Use the map name stored during initialization
-        # Priority: provided map_name > displayName from map_data > "Unknown"
-        map_name = self.map_name
-        
-        # Emit the top border
-        self._emit("# ═══════════════════════════════════════════════════")
-        
-        # Emit the map name and ID
-        self._emit(f"# {map_name} (Map ID: {self.map_id})")
-        
-        # Emit the generation notice
-        self._emit("# Auto-generated from RPG Maker MV")
-        
-        # Emit the bottom border
-        self._emit("# ═══════════════════════════════════════════════════")
-        
-        # Emit a blank line for spacing
-        self._emit()
+        self._emit_header_to(self.lines)
 
-    def _emit_events(self) -> None:
-        """Dispatch all events, separating autorun from regular events.
+    def _generate_map_label(self, autorun_events: list[dict[str, Any]]) -> str:
+        """Generate the map placeholder .rpy content.
 
-        RPG Maker events have a 'trigger' type that determines when they fire:
-        - Trigger 0: Action button (player must press interact)
-        - Trigger 1: Player touch (fires on collision)
-        - Trigger 2: Event touch (fires when event collides with player)
-        - Trigger 3: Autorun (fires automatically when map loads)
-        - Trigger 4: Parallel (runs in background)
+        Produces the global label that serves as the map's entry point.
+        If autorun events exist, each one is called in sequence using
+        short-form local label references (``.event_X_name``).
 
-        Autorun events (trigger 3) are special: they execute automatically
-        when the player enters the map. We group all autorun events under
-        a single map_{id}_enter label for easy navigation.
+        Output Example:
+            # ═══════════════════════════════════════════════════
+            # Refugee Camp (Map ID: 3)
+            # Auto-generated from RPG Maker MV
+            # ═══════════════════════════════════════════════════
 
-        Regular events (trigger 0 or 2) are emitted as individual callable
-        labels, one per event.
+            label map_3_Refugee_Camp:
+                call .event_3_auto
+                call .event_39_roadblock_setup
+                return
 
-        Emission Order:
-        1. Autorun events under map_{id}_enter
-        2. Regular events as individual labels
+        Args:
+            autorun_events: List of classified autorun event dicts.
 
-        Event Array Structure:
-        RPG Maker stores events as an array where indices are event IDs.
-        Deleted events are null entries (skipped during processing).
+        Returns:
+            Complete .rpy file content as a string.
         """
-        # Get the events array from the map data
-        events = self.map_data.get("events", [])
-        
-        # Check if there are any events
-        if not events:
-            # No events: emit a comment and return
-            self._emit("# No events on this map.")
-            return
+        buf: list[str] = []
+        self._emit_header_to(buf)
 
-        # Separate events into autorun and regular categories
-        autorun_events: list[dict[str, Any]] = []
-        regular_events: list[dict[str, Any]] = []
+        buf.append(f"label {self.map_label_name}:")
 
-        # Classify each event by its trigger type
-        for event in events:
-            # Skip null entries (deleted events)
-            if event is None:
-                continue
-            
-            # Get the event's pages
-            pages = event.get("pages", [])
-            
-            # Check the first page's trigger type
-            # Trigger type 3 = autorun (fires on map entry)
-            # We check the first page because RPG Maker evaluates pages in reverse order
-            # (highest numbered page first), but the trigger is set on page 0
-            if pages and pages[0].get("trigger") == 3:
-                # Autorun event: add to autorun list
-                autorun_events.append(event)
-            else:
-                # Regular event: add to regular list
-                regular_events.append(event)
-
-        # ── Emit Autorun Events ──
-        # Autorun events are grouped under a single map_{id}_enter label
         if autorun_events:
-            # Emit section header comment
-            self._emit("# ── Autorun sequence ──")
-            
-            # Emit the map entry label
-            # This label is jumped to from game_flow.rpy
-            self._emit(f"label map_{self.map_id}_enter:")
-            
-            # Enter the label block (increase indentation)
-            self._push()
-            
-            # Emit each autorun event's commands
-            for autorun_event in autorun_events:
-                self._emit_event(autorun_event)
-            
-            # Emit return statement to exit the label
-            self._emit("return")
-            
-            # Exit the label block (decrease indentation)
-            self._pop()
-            
-            # Emit a blank line for spacing
-            self._emit()
+            for event in autorun_events:
+                event_name = event.get("name", f"EV{event['id']:03d}")
+                label = safe_label(event_name, event["id"])
+                buf.append(f"    call .{label}")
 
-        # ── Emit Regular Events ──
-        # Regular events get individual callable labels
-        for regular_event in regular_events:
-            self._emit_event(regular_event)
+        buf.append("    return")
+        buf.append("")
 
-    def _emit_event(self, event: dict[str, Any]) -> None:
+        return join_with_interlines(buf, self.interlines)
+
+    def _generate_event_file(
+        self,
+        event: dict[str, Any],
+        is_autorun: bool,
+    ) -> tuple[int, str | None]:
+        """Generate a single .rpy file for one event.
+
+        Creates a fully qualified local label under the map's global label
+        and emits the event's page content.
+
+        Events that contain no meaningful commands (only a label and return)
+        are detected and skipped by returning ``None`` as the source.
+
+        Args:
+            event: Parsed RPG Maker event dict.
+            is_autorun: Whether this is an autorun event (affects header comment).
+
+        Returns:
+            Two-tuple of ``(event_id, file_content)``.  ``file_content`` is
+            ``None`` when the event is empty (no commands beyond label + return).
+        """
+        # Save current output buffer and indentation state
+        saved_lines = self.lines
+        saved_indent = self.indent_level
+        saved_text_buffer = self._text_buffer
+        saved_speaker = self._current_speaker
+        saved_face = self._current_face
+        saved_face_id = self._current_face_id
+
+        # Create a fresh buffer for this file
+        self.lines = []
+        self.indent_level = 0
+        self._text_buffer = []
+        self._current_speaker = None
+        self._current_face = None
+        self._current_face_id = None
+
+        # Emit header and event content
+        self._emit_header()
+        self._emit_event(event, use_local_label=True)
+
+        # Join lines into final source
+        source = join_with_interlines(self.lines, self.interlines)
+
+        # Restore previous state
+        self.lines = saved_lines
+        self.indent_level = saved_indent
+        self._text_buffer = saved_text_buffer
+        self._current_speaker = saved_speaker
+        self._current_face = saved_face
+        self._current_face_id = saved_face_id
+
+        # ── Detect empty events ──
+        # An event is empty if its source contains no meaningful code lines
+        # beyond the header, comment, label declaration, and return statement.
+        # These represent decorative RPG Maker elements (torches, glows, etc.)
+        # with no dialogue or gameplay logic.
+        if self._is_empty_event_source(source):
+            return event["id"], None
+
+        return event["id"], source
+
+    @staticmethod
+    def _is_empty_event_source(source: str) -> bool:
+        """Check whether a generated event source is empty.
+
+        An event source is considered empty when it contains no meaningful
+        code lines after stripping the file header, comment lines, the
+        ``label`` declaration, and the final ``return``.
+
+        Args:
+            source: Complete .rpy file content for a single event.
+
+        Returns:
+            ``True`` if the event has no meaningful content.
+        """
+        for line in source.splitlines():
+            stripped = line.strip()
+            # Skip empty lines
+            if not stripped:
+                continue
+            # Skip comment lines (header and inline comments)
+            if stripped.startswith("#"):
+                continue
+            # Skip the label declaration line
+            if stripped.startswith("label "):
+                continue
+            # Skip bare return statement
+            if stripped == "return":
+                continue
+            # Found a meaningful line (dialogue, menu, if, $, etc.)
+            return False
+        # No meaningful lines found
+        return True
+
+    def _emit_event(
+        self,
+        event: dict[str, Any],
+        use_local_label: bool = False,
+    ) -> None:
         """Generate Ren'Py code for a single RPG Maker event.
 
         Creates a label for the event and processes its pages. The label
         name is derived from the event's name and ID using safe_label().
 
+        When ``use_local_label`` is True the fully qualified local-label form
+        ``label {map_label_name}.{event_label}:`` is emitted instead of a
+        plain global label.  This is required when the label lives in a
+        separate file from the map's global label.
+
         Single-Page Events:
         Events with one page emit their commands directly without conditionals.
-        The page's commands are processed and emitted under the label.
 
         Multi-Page Events:
         Events with multiple pages generate an if/elif chain that checks
-        each page's conditions. The first page whose conditions are met
-        is the one that executes.
-
-        RPG Maker Page Evaluation:
-        Pages are evaluated in reverse order (highest page number first).
-        The first page whose conditions are all true wins. We mirror this
-        with an if/elif chain where the last page is the "if" and earlier
-        pages are "elif" branches.
+        each page's conditions (RPG Maker evaluates pages in reverse order).
 
         Args:
             event: Parsed RPG Maker event JSON object.
-                Expected structure:
-                {
-                    "id": int,
-                    "name": str,
-                    "x": int,
-                    "y": int,
-                    "pages": [page_dict, ...]
-                }
+            use_local_label: If True, emit a fully qualified local label
+                (``label {map_label_name}.{event_label}:``).
+                If False, emit a plain global label (``label {event_label}:``).
 
         Event Label Format:
             # ── Event {id}: "{name}" (pos {x},{y}) ──
-            label event_{id}_{sanitized_name}:
+            label map_3_Refugee_Camp.event_{id}_{sanitized_name}:
                 # [page content]
                 return
         """
@@ -504,6 +621,13 @@ class RenPyGenerator:
         # Example: "Town Elder", 5 → "event_5_town_elder"
         label = safe_label(event_name, event_id)
         
+        # Build the fully qualified label if local mode is requested
+        # Example: "map_3_Refugee_Camp.event_3_auto"
+        if use_local_label:
+            full_label = f"{self.map_label_name}.{label}"
+        else:
+            full_label = label
+        
         # Get the event's pages
         pages = event.get("pages", [])
 
@@ -516,7 +640,7 @@ class RenPyGenerator:
         if len(pages) == 1:
             # Single page: emit commands directly without conditionals
             # This is the common case for simple events
-            self._emit(f"label {label}:")
+            self._emit(f"label {full_label}:")
             self._push()
             self._emit_page(pages[0], event_id)
             self._emit("return")
@@ -524,7 +648,7 @@ class RenPyGenerator:
         else:
             # Multiple pages: emit if/elif chain checking page conditions
             # RPG Maker evaluates pages in reverse order (highest first)
-            self._emit(f"label {label}:")
+            self._emit(f"label {full_label}:")
             self._push()
             self._emit_multi_page(pages, event_id)
             self._emit("return")
@@ -898,7 +1022,7 @@ class RenPyGenerator:
                     self._emit(f'play sound "{sound_name}.ogg"')
 
             # ── TRANSFER_PLAYER (code 201): Jump to another map ──
-            # Emits: jump map_{id}_enter
+            # Emits: jump map_{id}_{Name}
             elif command_code == CMD["TRANSFER_PLAYER"]:
                 # Flush any pending text
                 self._flush_text()
@@ -909,14 +1033,17 @@ class RenPyGenerator:
                 # Extract target coordinates (for comment)
                 target_x, target_y = parameters[2], parameters[3]
                 
-                # Get the target map's display name (for comment)
-                target_map_name = self.collector.map_names.get(target_map_id, f"map_{target_map_id}")
+                # Get the target map's display name
+                target_map_name = self.collector.map_names.get(target_map_id, f"Map{target_map_id}")
+                
+                # Build the target label using safe_map_label for consistency
+                target_label = safe_map_label(target_map_id, target_map_name)
                 
                 # Emit comment showing transfer details
                 self._emit(f'# Transfer to {target_map_name} ({target_x}, {target_y})')
                 
                 # Emit the jump command
-                self._emit(f"jump map_{target_map_id}_enter")
+                self._emit(f"jump {target_label}")
 
             # ── PLUGIN_COMMAND (code 356): Handle plugin command ──
             # Emits: varies based on plugin command type
@@ -1346,7 +1473,9 @@ class RenPyGenerator:
         # ── TRANSFER_PLAYER: Jump to another map ──
         elif command_code == CMD["TRANSFER_PLAYER"]:
             target_map_id = parameters[1]
-            self._emit(f"jump map_{target_map_id}_enter")
+            target_map_name = self.collector.map_names.get(target_map_id, f"Map{target_map_id}")
+            target_label = safe_map_label(target_map_id, target_map_name)
+            self._emit(f"jump {target_label}")
 
     def _build_renpy_condition(self, conditions: dict[str, Any], event_id: int) -> str:
         """Convert RPG Maker event page conditions to a Ren'Py expression.
