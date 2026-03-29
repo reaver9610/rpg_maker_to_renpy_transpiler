@@ -472,6 +472,50 @@ class DataCollector:
         
         return None
 
+    def collect_from_common_events(self, common_events_data: list[Any]) -> None:
+        """Scan common events to collect all referenced game state.
+
+        Common events are global scripts shared across maps. Unlike map events,
+        they have a flat command list (no pages) and use a `switchId` field to
+        gate execution instead of per-page conditions.
+
+        Processing Order:
+        1. Iterate over the sparse array (skip null entries)
+        2. For each event, scan the flat `list` of commands
+        3. Record the `switchId` if present (> 0)
+
+        Args:
+            common_events_data: Parsed JSON array from CommonEvents.json.
+                Sparse array where index 0 is null, other indices contain
+                event dicts with keys: id, list, name, switchId, trigger.
+
+        Example:
+            >>> collector = DataCollector()
+            >>> with open("CommonEvents.json") as f:
+            ...     common_data = json.load(f)
+            >>> collector.collect_from_common_events(common_data)
+        """
+        # Iterate over each entry in the sparse array
+        for event in common_events_data:
+            # Skip null entries (sparse array slots)
+            if event is None:
+                continue
+
+            # Get the event's numeric ID
+            event_id = event["id"]
+
+            # Record the switchId if it gates this common event's execution
+            # switchId > 0 means this common event only runs when that switch is ON
+            switch_id = event.get("switchId", 0)
+            if switch_id > 0:
+                self.switch_ids.add(switch_id)
+
+            # Scan the flat command list for referenced game state
+            # Common events have a 'list' field instead of 'pages'
+            command_list = event.get("list", [])
+            if command_list:
+                self._collect_commands(command_list, event_id, map_id=0)
+
     def collect_from_map(self, map_data: dict[str, Any], map_id: int = 0) -> None:
         """Scan a single map's events to collect all referenced data.
 

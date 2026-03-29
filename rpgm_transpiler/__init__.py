@@ -88,6 +88,7 @@ from .switches import (
 )
 from .game_flow import generate_game_flow_rpy
 from .side_images import generate_side_images_rpy
+from .common_events import generate_common_events_rpy
 from .helpers import to_title_case, safe_map_label
 
 __all__ = [
@@ -105,6 +106,7 @@ __all__ = [
     "generate_map_switches_rpy",
     "generate_event_switches_rpy",
     "generate_game_flow_rpy",
+    "generate_common_events_rpy",
 ]
 
 
@@ -163,7 +165,8 @@ def transpile_to_renpy(
         Default 0 means no extra spacing. Use 1 for single blank line between lines, etc.
         interlines_targets: Set of file types to apply interlines to.
         Valid values: "maps", "characters", "global_switches", "global_variables",
-        "global_items", "global_economy", "global_quests", "side_images", "game_flow".
+        "global_items", "global_economy", "global_quests", "side_images", "game_flow",
+        "common_events".
         If None and interlines > 0, defaults to {"maps"}.
         If interlines == 0, this parameter is ignored.
         indent_width: Number of spaces per indentation level. Default is 4.
@@ -610,6 +613,58 @@ def transpile_to_renpy(
                 if event_switches_src:
                     switches_file = os.path.join(event_subdir, f"{result.map_label_name}_{filename_suffix}_switches.rpy")
                     _write_file(switches_file, event_switches_src)
+
+    # ═══════════════════════════════════════════════════════════════════
+    # PHASE 5b: Generate common events files
+    # ═══════════════════════════════════════════════════════════════════
+
+    # Load CommonEvents.json from the input directory if available
+    # Common events are global scripts shared across all maps
+    if input_paths:
+        input_dir = os.path.dirname(input_paths[0]) or "."
+        common_events_path = os.path.join(input_dir, "CommonEvents.json")
+
+        if os.path.exists(common_events_path):
+            try:
+                with open(common_events_path, "r", encoding="utf-8") as common_file:
+                    common_events_data = json.load(common_file)
+
+                # Run collection pass on common events
+                # This discovers switches, variables, characters, etc. in common events
+                collector.collect_from_common_events(common_events_data)
+
+                # Log collection from common events
+                common_event_count = sum(1 for e in common_events_data if e is not None)
+                print(f"[INFO] Collected from {common_event_count} common events")
+
+                # Generate per-event .rpy files
+                common_events_interlines = interlines if "common_events" in interlines_targets else 0
+                common_events_result = generate_common_events_rpy(
+                    common_events_data, collector,
+                    multiline=multiline, interlines=common_events_interlines,
+                    indent_width=indent_width,
+                )
+
+                # Write each common event to its own file in a subfolder
+                if common_events_result:
+                    common_events_dir = os.path.join(output_dir, "common_events")
+                    os.makedirs(common_events_dir, exist_ok=True)
+
+                    for event_id, (source, label) in sorted(common_events_result.items()):
+                        # Create subfolder: common_events/common_event_{id}_{name}/
+                        event_subdir = os.path.join(common_events_dir, label)
+                        os.makedirs(event_subdir, exist_ok=True)
+
+                        # Write the event file
+                        event_file = os.path.join(event_subdir, f"{label}.rpy")
+                        _write_file(event_file, source)
+
+                    print(f"[INFO] Generated {len(common_events_result)} common event files")
+
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"[WARN] Could not load CommonEvents.json: {e}")
+        else:
+            print(f"[INFO] No CommonEvents.json found in {input_dir}, skipping common events")
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 6: Generate game_flow.rpy (navigation labels)

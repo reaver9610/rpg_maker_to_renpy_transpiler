@@ -323,6 +323,13 @@ def parse_args() -> argparse.Namespace:
         help="Apply interlines to game_flow.rpy"
     )
     argument_parser.add_argument(
+        "--common-events",
+        action="store_true",
+        dest="interlines_common_events",
+        default=False,
+        help="Apply interlines to common event files"
+    )
+    argument_parser.add_argument(
         "--all",
         action="store_true",
         dest="interlines_all",
@@ -398,7 +405,7 @@ def parse_args() -> argparse.Namespace:
         interlines_targets = {
             "maps", "characters", "global_switches", "global_variables",
             "global_items", "global_economy", "global_quests",
-            "side_images", "game_flow",
+            "side_images", "game_flow", "common_events",
         }
     elif args.interlines > 0:
         # -n was used, check for specific targets
@@ -410,7 +417,8 @@ def parse_args() -> argparse.Namespace:
             getattr(args, "interlines_global_economy", False) or
             getattr(args, "interlines_global_quests", False) or
             getattr(args, "interlines_side_images", False) or
-            getattr(args, "interlines_game_flow", False)):
+            getattr(args, "interlines_game_flow", False) or
+            getattr(args, "interlines_common_events", False)):
             # Specific targets specified, use those
             if getattr(args, "interlines_maps", False):
                 interlines_targets.add("maps")
@@ -430,6 +438,8 @@ def parse_args() -> argparse.Namespace:
                 interlines_targets.add("side_images")
             if getattr(args, "interlines_game_flow", False):
                 interlines_targets.add("game_flow")
+            if getattr(args, "interlines_common_events", False):
+                interlines_targets.add("common_events")
         else:
             # No specific targets, default to maps only
             interlines_targets = {"maps"}
@@ -510,7 +520,7 @@ def collect_paths(cli_args: argparse.Namespace) -> list[str]:
             print(f"Error: Directory not found: {cli_args.directory}")
             sys.exit(1)
         # Files to exclude from map processing (not map JSON files)
-        excluded_files = {"MapInfos.json", "System.json"}
+        excluded_files = {"MapInfos.json", "System.json", "CommonEvents.json"}
         for filename in sorted(os.listdir(cli_args.directory)):
             if filename.endswith(".json") and filename not in excluded_files:
                 resolved_paths.append(os.path.join(cli_args.directory, filename))
@@ -522,7 +532,7 @@ def collect_paths(cli_args: argparse.Namespace) -> list[str]:
             print(f"Error: No files match pattern: {cli_args.regex}")
             sys.exit(1)
         # Files to exclude from map processing (not map JSON files)
-        excluded_files = {"MapInfos.json", "System.json"}
+        excluded_files = {"MapInfos.json", "System.json", "CommonEvents.json"}
         resolved_paths.extend(sorted([p for p in pattern_matches if os.path.basename(p) not in excluded_files]))
 
     # Ensure at least one file was found

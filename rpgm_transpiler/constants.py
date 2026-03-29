@@ -205,7 +205,21 @@ CMD: dict[str, int] = {
     # This is the primary map navigation command.
     # The generator emits: jump map_{map_id}_enter
     "TRANSFER_PLAYER": 201,
-    
+
+    # ═══════════════════════════════════════════════════════════════
+    # SCREEN EFFECTS
+    # ═══════════════════════════════════════════════════════════════
+
+    # TINT_SCREEN (code 221): Tints the screen to a specified color.
+    # Parameters: [red, green, blue, strength, duration, wait_flag]
+    # Used for visual effects like fading to black or sepia tones.
+    "TINT_SCREEN": 221,
+
+    # FLASH_SCREEN (code 222): Flashes the screen with a white overlay.
+    # Parameters: [power, duration, wait_flag]
+    # Often used after TINT_SCREEN to restore normal colors.
+    "FLASH_SCREEN": 222,
+
     # ═══════════════════════════════════════════════════════════════
     # TIMING AND AUDIO COMMANDS
     # ═══════════════════════════════════════════════════════════════

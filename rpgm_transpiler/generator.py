@@ -1230,13 +1230,25 @@ class RenPyGenerator:
         collected_commands: list[dict[str, Any]] = []  # Current branch's commands
         is_collecting = False  # Are we inside a WHEN_CHOICE/WHEN_CANCEL block?
 
+        # Compute the expected indent level for branch terminator END commands.
+        # We use source JSON indents (not Ren'Py output indents) for tracking.
+        # Find the SHOW_CHOICES indent from the command at start_index.
+        # For nested menus in collected branch commands, the source indents are offset
+        # from the parent. We compute the base indent as the minimum indent in the
+        # scanned range so that WHEN_CHOICE at the same level as SHOW_CHOICES is found.
+        show_choices_indent = commands[start_index].get("indent", 0)
+        expected_branch_indent = show_choices_indent       # WHEN_CHOICE indent
+        expected_terminator_indent = show_choices_indent + 1  # Branch content/terminator indent
+
         # Scan forward through commands to collect choice branch contents
         while scan_index < len(commands):
             command = commands[scan_index]
             command_code = command["code"]
 
             # WHEN_CHOICE: Start collecting for a specific choice
-            if command_code == CMD["WHEN_CHOICE"]:
+            # Only handle WHEN_CHOICE at our level (same indent as SHOW_CHOICES)
+            # Nested WHEN_CHOICE at deeper levels are collected as part of the branch
+            if command_code == CMD["WHEN_CHOICE"] and command.get("indent", 0) == expected_branch_indent:
                 # Save previously collected commands for the prior choice
                 if current_choice_index is not None:
                     choice_command_map[current_choice_index] = collected_commands
@@ -1247,7 +1259,8 @@ class RenPyGenerator:
                 is_collecting = True
 
             # WHEN_CANCEL: Start collecting for the cancel branch
-            elif command_code == CMD["WHEN_CANCEL"]:
+            # Only handle WHEN_CANCEL at our level
+            elif command_code == CMD["WHEN_CANCEL"] and command.get("indent", 0) == expected_branch_indent:
                 # Save previously collected commands for the prior choice
                 if current_choice_index is not None:
                     choice_command_map[current_choice_index] = collected_commands
@@ -1258,7 +1271,8 @@ class RenPyGenerator:
                 is_collecting = True
 
             # END_CHOICES: Stop scanning
-            elif command_code == CMD["END_CHOICES"]:
+            # Only handle END_CHOICES at our level (same indent as SHOW_CHOICES)
+            elif command_code == CMD["END_CHOICES"] and command.get("indent", 0) == expected_branch_indent:
                 # Save the last choice's commands
                 if current_choice_index is not None:
                     choice_command_map[current_choice_index] = collected_commands
@@ -1267,9 +1281,45 @@ class RenPyGenerator:
                 scan_index += 1
                 break
 
-            # END: Premature end of command list
+            # END: Either a branch terminator or a nested structure terminator
             elif command_code == CMD["END"]:
-                break
+                # Check if this END terminates the current choice branch
+                # A branch terminator END is followed by either:
+                #   - Another WHEN_CHOICE (next branch)
+                #   - END_CHOICES (end of all branches)
+                # A nested structure terminator END is followed by other commands
+                # (ELSE, ELSE_BRANCH, more nested commands, etc.)
+                # We peek ahead to determine which case this is.
+                end_indent = command.get("indent", 0)
+                next_index = scan_index + 1
+                next_code = commands[next_index]["code"] if next_index < len(commands) else -1
+
+                # This is a branch terminator if:
+                # 1. At the expected terminator indent AND followed by WHEN_CHOICE or END_CHOICES
+                # 2. Or at the expected terminator indent and is_collecting is True
+                is_branch_terminator = (
+                    end_indent == expected_terminator_indent
+                    and (
+                        next_code == CMD["WHEN_CHOICE"]
+                        or next_code == CMD["WHEN_CANCEL"]
+                        or next_code == CMD["END_CHOICES"]
+                        or next_code == CMD["END"]
+                    )
+                )
+
+                if is_branch_terminator:
+                    # Branch terminator: save current branch and continue scanning
+                    if current_choice_index is not None:
+                        choice_command_map[current_choice_index] = collected_commands
+                        collected_commands = []
+                        current_choice_index = None
+                        is_collecting = False
+                    elif collected_commands is cancel_commands:
+                        is_collecting = False
+                else:
+                    # Nested END: collect it as part of the branch
+                    if is_collecting:
+                        collected_commands.append(command)
 
             # Any other command: Append to current branch's collection
             else:

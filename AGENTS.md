@@ -167,6 +167,7 @@ rpgm-transpile -i --file inputs/Map001.json -f --multiline
   - `--directory DIR` - Transpile all `.json` files in a directory
   - `--regex PATTERN` - Transpile files matching a glob pattern
 - `-o, --output OUTPUT_DIR` - Output directory for generated .rpy files (default: outputs)
+- `-s, --indent-width N` - Number of spaces per indentation level (default: 4)
 - `-n, --interlines N` - Number of blank lines between each line in output (default: 0)
   - `--maps` - Apply interlines to map files only (default when -n is used)
   - `--characters` - Apply interlines to characters.rpy
@@ -181,6 +182,16 @@ rpgm-transpile -i --file inputs/Map001.json -f --multiline
 - `-f, --format` - Format options (use with one of the following sub-options):
   - `--single` - Emit single-line dialogue (default)
   - `--multiline` - Emit multi-line dialogue as Ren'Py triple-quoted strings
+- `-c, --case` - Character case options (use with sub-options):
+  - `--lower` - Lowercase variable names (e.g., `claire`)
+  - `--title` - Title case variable names (e.g., `Claire`) [default]
+  - `--upper` - Uppercase variable names (e.g., `CLAIRE`)
+  - `--lower-display` - Lowercase display names
+  - `--title-display` - Title case display names [default]
+  - `--upper-display` - Uppercase display names
+  - `--lower-image` - Lowercase image tags [default]
+  - `--title-image` - Title case image tags
+  - `--upper-image` - Uppercase image tags
 
 Output goes to `outputs/` by default.
 
@@ -189,48 +200,81 @@ Output goes to `outputs/` by default.
 There is no test framework configured. No pytest, unittest, or other test runner exists.
 
 ### Test Scripts
-Test scripts are in `test_scripts/` directory:
+Test scripts are in `test_scripts/` directory, organized by category:
 
 ```bash
-# Dev mode (uses PYTHONPATH)
-./test_scripts/test_single_file.sh
-./test_scripts/test_multiple_files.sh
-./test_scripts/test_folder.sh
-./test_scripts/test_regex.sh
-./test_scripts/test_interlines_default.sh
-./test_scripts/test_interlines_targets.sh
-./test_scripts/test_interlines_all.sh
-./test_scripts/test_multiline_format.sh
-./test_scripts/test_output_dir.sh
-./test_scripts/test_multiline_output.sh
+# Input options (test_scripts/input/)
+./test_scripts/input/test_single_file.sh
+./test_scripts/input/test_multiple_files.sh
+./test_scripts/input/test_folder.sh
+./test_scripts/input/test_regex.sh
+
+# Interlines options (test_scripts/interlines/)
+./test_scripts/interlines/test_interlines_default.sh
+./test_scripts/interlines/test_interlines_targets.sh
+./test_scripts/interlines/test_interlines_all.sh
+
+# Format options (test_scripts/format/)
+./test_scripts/format/test_multiline_format.sh
+
+# Output options (test_scripts/output/)
+./test_scripts/output/test_output_dir.sh
+
+# Indent width options (test_scripts/indent/)
+./test_scripts/indent/test_indent_width_default.sh
+./test_scripts/indent/test_indent_width_custom.sh
+
+# Case options (test_scripts/case/)
+./test_scripts/case/test_case_default.sh
+./test_scripts/case/test_case_lower.sh
+./test_scripts/case/test_case_upper.sh
+./test_scripts/case/test_case_full_lowercase.sh
+
+# Combined options (test_scripts/combined/)
+./test_scripts/combined/test_multiline_output.sh
+./test_scripts/combined/test_indent_and_case.sh
 
 # Global mode (uses installed rpgm-transpile)
-./test_scripts/test_single_file.sh --global
-./test_scripts/test_multiple_files.sh --global
-./test_scripts/test_folder.sh --global
-./test_scripts/test_regex.sh --global
-./test_scripts/test_interlines_default.sh --global
-./test_scripts/test_interlines_targets.sh --global
-./test_scripts/test_interlines_all.sh --global
-./test_scripts/test_multiline_format.sh --global
-./test_scripts/test_output_dir.sh --global
-./test_scripts/test_multiline_output.sh --global
+./test_scripts/input/test_single_file.sh --global
+./test_scripts/input/test_multiple_files.sh --global
+./test_scripts/input/test_folder.sh --global
+./test_scripts/input/test_regex.sh --global
+./test_scripts/interlines/test_interlines_default.sh --global
+./test_scripts/interlines/test_interlines_targets.sh --global
+./test_scripts/interlines/test_interlines_all.sh --global
+./test_scripts/format/test_multiline_format.sh --global
+./test_scripts/output/test_output_dir.sh --global
+./test_scripts/indent/test_indent_width_default.sh --global
+./test_scripts/indent/test_indent_width_custom.sh --global
+./test_scripts/case/test_case_default.sh --global
+./test_scripts/case/test_case_lower.sh --global
+./test_scripts/case/test_case_upper.sh --global
+./test_scripts/case/test_case_full_lowercase.sh --global
+./test_scripts/combined/test_multiline_output.sh --global
+./test_scripts/combined/test_indent_and_case.sh --global
 ```
 
 #### Test Scripts Overview
 
 | Script | Purpose |
 |--------|---------|
-| `test_single_file.sh` | Single file input with `-i --file` |
-| `test_multiple_files.sh` | Multiple files input with `-i --multiple` |
-| `test_folder.sh` | Directory input with `-i --directory` |
-| `test_regex.sh` | Glob pattern input with `-i --regex` |
-| `test_interlines_default.sh` | Test `-n 2` (defaults to maps) |
-| `test_interlines_targets.sh` | Test `-n 1 --characters --global-switches` |
-| `test_interlines_all.sh` | Test `-n 1 --all` flag |
-| `test_multiline_format.sh` | Test `-f --multiline` format |
-| `test_output_dir.sh` | Test custom output directory `-o` |
-| `test_multiline_output.sh` | Test combined options: multiline + custom output + interlines |
+| `test_scripts/input/test_single_file.sh` | Single file input with `-i --file` |
+| `test_scripts/input/test_multiple_files.sh` | Multiple files input with `-i --multiple` |
+| `test_scripts/input/test_folder.sh` | Directory input with `-i --directory` |
+| `test_scripts/input/test_regex.sh` | Glob pattern input with `-i --regex` |
+| `test_scripts/interlines/test_interlines_default.sh` | Test `-n 2` (defaults to maps) |
+| `test_scripts/interlines/test_interlines_targets.sh` | Test `-n 1 --characters --global-switches` |
+| `test_scripts/interlines/test_interlines_all.sh` | Test `-n 1 --all` flag |
+| `test_scripts/format/test_multiline_format.sh` | Test `-f --multiline` format |
+| `test_scripts/output/test_output_dir.sh` | Test custom output directory `-o` |
+| `test_scripts/indent/test_indent_width_default.sh` | Test default indent width (4 spaces) |
+| `test_scripts/indent/test_indent_width_custom.sh` | Test `-s 2` custom indent width |
+| `test_scripts/case/test_case_default.sh` | Test default case (title var/display, lower image) |
+| `test_scripts/case/test_case_lower.sh` | Test `-c --lower` for lowercase variable names |
+| `test_scripts/case/test_case_upper.sh` | Test `-c --upper` for uppercase variable names |
+| `test_scripts/case/test_case_full_lowercase.sh` | Test `-c --lower --lower-display --lower-image` |
+| `test_scripts/combined/test_multiline_output.sh` | Test combined options: multiline + custom output + interlines |
+| `test_scripts/combined/test_indent_and_case.sh` | Test combined `-s 2 -c --lower` options |
 
 ### Manual Verification
 To verify changes manually:
