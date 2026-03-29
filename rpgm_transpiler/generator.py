@@ -1953,7 +1953,7 @@ class RenPyGenerator:
         if conditions.get("itemValid"):
             item_id = conditions["itemId"]
             # Check if player has 1+ of item using the items store
-            condition_checks.append(f"game_items.item_{item_id} > 0")
+            condition_checks.append(f"game_items.{self.collector.get_item_name(item_id)} > 0")
 
         # Join all conditions with "and"
         return " and ".join(condition_checks) if condition_checks else ""

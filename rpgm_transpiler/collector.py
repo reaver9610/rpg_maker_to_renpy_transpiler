@@ -162,6 +162,14 @@ class DataCollector:
         # Used by generate_global_items_rpy() to initialize: item_{id} = 0
         self.item_ids: set[int] = set()
         
+        # Weapons: inventory counters
+        # Used by generate_global_items_rpy() to initialize: weapon_{id} = 0
+        self.weapon_ids: set[int] = set()
+        
+        # Armors: inventory counters
+        # Used by generate_global_items_rpy() to initialize: armor_{id} = 0
+        self.armor_ids: set[int] = set()
+        
         # Map IDs: all maps referenced in transfers or loaded as input
         # Used by generate_game_flow_rpy() to create navigation labels
         self.map_ids: set[int] = set()
@@ -178,6 +186,18 @@ class DataCollector:
         # Contains switches, variables, terms, and other system settings
         # Loaded from System.json if available in the project directory
         self.system_data: dict | None = None
+        
+        # Item names: item_id → sanitized name from Items.json
+        # Used by generate_global_items_rpy() to initialize: item_{id}_{name} = 0
+        self.item_names: dict[int, str] = {}
+        
+        # Weapon names: weapon_id → sanitized name from Weapons.json
+        # Used by generate_global_items_rpy() to initialize: weapon_{id}_{name} = 0
+        self.weapon_names: dict[int, str] = {}
+        
+        # Armor names: armor_id → sanitized name from Armors.json
+        # Used by generate_global_items_rpy() to initialize: armor_{id}_{name} = 0
+        self.armor_names: dict[int, str] = {}
 
     @staticmethod
     def _sanitize_name_for_variable(name: str) -> str:
@@ -296,6 +316,105 @@ class DataCollector:
         else:
             # Fallback: just use the ID without a name
             return f"var_{variable_id}"
+
+    def get_item_name(self, item_id: int) -> str:
+        """Get a concatenated variable name for an item ID.
+
+        Returns a safe Ren'Py variable name combining the item ID with
+        its human-readable name from Items.json.
+
+        Format: item_{id}_{sanitized_name}
+
+        Args:
+            item_id: The numeric item ID (1-based).
+
+        Returns:
+            Concatenated variable name suitable for Ren'Py.
+
+        Example:
+            >>> # With Items.json loaded containing items[1] = "Fruit"
+            >>> collector.get_item_name(1)
+            'item_1_fruit'
+            >>> # Without Items.json or unknown item
+            >>> collector.get_item_name(999)
+            'item_999'
+        """
+        # Get the human-readable name from Items.json if available
+        raw_name = self.item_names.get(item_id)
+        
+        if raw_name:
+            # Sanitize the name for variable concatenation
+            sanitized = self._sanitize_name_for_variable(raw_name)
+            return f"item_{item_id}_{sanitized}"
+        else:
+            # Fallback: just use the ID without a name
+            return f"item_{item_id}"
+
+    def get_weapon_name(self, weapon_id: int) -> str:
+        """Get a concatenated variable name for a weapon ID.
+
+        Returns a safe Ren'Py variable name combining the weapon ID with
+        its human-readable name from Weapons.json.
+
+        Format: weapon_{id}_{sanitized_name}
+
+        Args:
+            weapon_id: The numeric weapon ID (1-based).
+
+        Returns:
+            Concatenated variable name suitable for Ren'Py.
+
+        Example:
+            >>> # With Weapons.json loaded containing weapons[1] = "Iron Sword"
+            >>> collector.get_weapon_name(1)
+            'weapon_1_iron_sword'
+            >>> # Without Weapons.json or unknown weapon
+            >>> collector.get_weapon_name(999)
+            'weapon_999'
+        """
+        # Get the human-readable name from Weapons.json if available
+        raw_name = self.weapon_names.get(weapon_id)
+        
+        if raw_name:
+            # Sanitize the name for variable concatenation
+            sanitized = self._sanitize_name_for_variable(raw_name)
+            return f"weapon_{weapon_id}_{sanitized}"
+        else:
+            # Fallback: just use the ID without a name
+            return f"weapon_{weapon_id}"
+
+    def get_armor_name(self, armor_id: int) -> str:
+        """Get a concatenated variable name for an armor ID.
+
+        Returns a safe Ren'Py variable name combining the armor ID with
+        its human-readable name from Armors.json.
+
+        Format: armor_{id}_{sanitized_name}
+
+        Args:
+            armor_id: The numeric armor ID (1-based).
+
+        Returns:
+            Concatenated variable name suitable for Ren'Py.
+
+        Example:
+            >>> # With Armors.json loaded containing armors[1] = "Leather Armor"
+            >>> collector.get_armor_name(1)
+            'armor_1_leather_armor'
+            >>> # Without Armors.json or unknown armor
+            >>> collector.get_armor_name(999)
+            'armor_999'
+        """
+        # Get the human-readable name from Armors.json if available
+        raw_name = self.armor_names.get(armor_id)
+        
+        if raw_name:
+            # Sanitize the name for variable concatenation
+            sanitized = self._sanitize_name_for_variable(raw_name)
+            return f"armor_{armor_id}_{sanitized}"
+        else:
+            # Fallback: just use the ID without a name
+            return f"armor_{armor_id}"
 
     def get_switch_store_name(self, switch_id: int) -> str:
         """Get a fully-qualified store-prefixed variable name for a global switch.
@@ -828,6 +947,24 @@ class DataCollector:
             elif command_code == CMD["CHANGE_ITEMS_CMD"]:
                 # Add the item ID being modified
                 self.item_ids.add(parameters[1])
+
+            # ── CHANGE_ITEMS (code 126): Add/remove items ──
+            # Parameters: [operation_type, item_id, operand_source, amount_or_variable_id]
+            elif command_code == CMD["CHANGE_ITEMS"]:
+                # Add the item ID being modified (second parameter)
+                self.item_ids.add(parameters[1])
+
+            # ── CHANGE_WEAPONS (code 127): Add/remove weapons ──
+            # Parameters: [operation_type, weapon_id, operand_source, amount_or_variable_id]
+            elif command_code == CMD["CHANGE_WEAPONS"]:
+                # Add the weapon ID being modified (second parameter)
+                self.weapon_ids.add(parameters[1])
+
+            # ── CHANGE_ARMORS (code 128): Add/remove armors ──
+            # Parameters: [operation_type, armor_id, operand_source, amount_or_variable_id]
+            elif command_code == CMD["CHANGE_ARMORS"]:
+                # Add the armor ID being modified (second parameter)
+                self.armor_ids.add(parameters[1])
 
             # ── PLUGIN_COMMAND (code 356): Custom plugin command ──
             # Parameters: [command_string]

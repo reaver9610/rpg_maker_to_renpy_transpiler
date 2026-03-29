@@ -268,7 +268,44 @@ def transpile_to_renpy(
                     print(f"[WARN] Could not load System.json: {e}")
 
     # ═══════════════════════════════════════════════════════════════════
-    # PHASE 0c: Load MapInfos.json if available
+    # PHASE 0c: Load Items/Weapons/Armors.json if available
+    # ═══════════════════════════════════════════════════════════════════
+    
+    # Load item/weapon/armor names from JSON database files
+    # These files contain arrays of objects with "id" and "name" fields
+    if input_paths:
+        input_dir = os.path.dirname(input_paths[0]) or "."
+        
+        # Helper to load JSON array and populate name dict
+        def load_json_names(filename: str, target_dict: dict[int, str]) -> None:
+            json_path = os.path.join(input_dir, filename)
+            if not os.path.exists(json_path):
+                # Also check workspace root
+                root_path = os.path.join(".", filename)
+                if root_path != json_path and os.path.exists(root_path):
+                    json_path = root_path
+                else:
+                    return
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict) and "id" in item and "name" in item:
+                                item_id = item["id"]
+                                item_name = item["name"]
+                                target_dict[item_id] = item_name
+                        print(f"[INFO] Loaded {len(target_dict)} names from {filename}")
+            except (json.JSONDecodeError, OSError) as e:
+                print(f"[WARN] Could not load {filename}: {e}")
+        
+        # Load each database file
+        load_json_names("Items.json", collector.item_names)
+        load_json_names("Weapons.json", collector.weapon_names)
+        load_json_names("Armors.json", collector.armor_names)
+
+    # ═══════════════════════════════════════════════════════════════════
+    # PHASE 0d: Load MapInfos.json if available
     # ═══════════════════════════════════════════════════════════════════
     
     # MapInfos.json contains map hierarchy information (parent-child relationships)

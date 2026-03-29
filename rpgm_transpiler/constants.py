@@ -184,10 +184,29 @@ CMD: dict[str, int] = {
     # The collector records item_ids for state initialization.
     "CHANGE_ITEMS": 126,
     
+    # CHANGE_WEAPONS (code 127): Adds or removes weapons from the player's inventory.
+    # Parameters: [operation_type, weapon_id, operand_source, amount_or_variable_id]
+    # - operation_type: 0=increase, 1=decrease
+    # - weapon_id: The database ID of the weapon
+    # - operand_source: 0=constant, 1=variable
+    # - amount_or_variable_id: The quantity to add/remove
+    # Weapons are tracked as integers (quantity owned).
+    # The collector records weapon_ids for state initialization.
+    "CHANGE_WEAPONS": 127,
+    
+    # CHANGE_ARMORS (code 128): Adds or removes armors from the player's inventory.
+    # Parameters: [operation_type, armor_id, operand_source, amount_or_variable_id]
+    # - operation_type: 0=increase, 1=decrease
+    # - armor_id: The database ID of the armor
+    # - operand_source: 0=constant, 1=variable
+    # - amount_or_variable_id: The quantity to add/remove
+    # Armors are tracked as integers (quantity owned).
+    # The collector records armor_ids for state initialization.
+    "CHANGE_ARMORS": 128,
+    
     # CHANGE_ITEMS_CMD (code 317): Alternative item change command (plugin-specific).
     # Parameters: [unknown, item_id, ...]
     # This appears in some plugin-augmented maps as an alternative to CHANGE_ITEMS.
-    # The collector extracts item_id for state initialization.
     "CHANGE_ITEMS_CMD": 317,
     
     # ═══════════════════════════════════════════════════════════════

@@ -183,28 +183,33 @@ def generate_global_variables_rpy(collector: DataCollector, interlines: int = 0,
 
 
 def generate_global_items_rpy(collector: DataCollector, interlines: int = 0, indent_width: int = 4) -> str:
-    """Generate global_items.rpy with default item inventory declarations.
+    """Generate global_items.rpy with default item/weapon/armor inventory declarations.
 
     Creates a .rpy file containing `init python in game_items:` assignments for every
-    item discovered during the collection phase.
+    item, weapon, and armor discovered during the collection phase.
 
     Store: game_items
-    Reference: game_items.item_{id}
+    Reference: game_items.item_{id}_{name}, game_items.weapon_{id}_{name}, game_items.armor_{id}_{name}
 
     Args:
-        collector: DataCollector instance populated with item data.
+        collector: DataCollector instance populated with item/weapon/armor data.
             Required attributes:
             - item_ids: set of item IDs
+            - weapon_ids: set of weapon IDs
+            - armor_ids: set of armor IDs
+            - get_item_name(item_id): returns variable name
+            - get_weapon_name(weapon_id): returns variable name
+            - get_armor_name(armor_id): returns variable name
         interlines: Number of blank lines to insert between each output line.
             Default 0 means no extra spacing.
 
     Returns:
         Complete .rpy source string for global_items.rpy.
-        Returns empty string if no items were collected.
+        Returns empty string if no items, weapons, or armors were collected.
 
     Example:
         >>> collector = DataCollector()
-        >>> # ... populate collector with item_ids ...
+        >>> # ... populate collector with item_ids, weapon_ids, armor_ids ...
         >>> source = generate_global_items_rpy(collector)
         >>> with open("global_items.rpy", "w") as f:
         ...     f.write(source)
@@ -219,24 +224,57 @@ def generate_global_items_rpy(collector: DataCollector, interlines: int = 0, ind
     # ── File Header ──
     # Emit a decorative header with section marker
     output_lines.append("# ═══════════════════════════════════════════════════")
-    output_lines.append("# ITEMS")
+    output_lines.append("# INVENTORY")
     output_lines.append("# Auto-generated from RPG Maker MV")
     output_lines.append("# ═══════════════════════════════════════════════════")
     output_lines.append("")
 
-    # ── Items ──
-    # Emit only if there are items in the collection
-    if collector.item_ids:
-        # Use the game_items named store for clean namespace separation
-        output_lines.append("init python in game_items:")
-        output_lines.append("")
+    # Check if any inventory data exists
+    has_any = collector.item_ids or collector.weapon_ids or collector.armor_ids
+    if not has_any:
+        return ""
 
+    # Use the game_items named store for clean namespace separation
+    output_lines.append("init python in game_items:")
+    output_lines.append("")
+
+    # ── Items ──
+    if collector.item_ids:
+        # Subsection comment
+        output_lines.append(f"{make_indent(indent_width)}# Items")
         # Iterate over items in sorted order for consistent output
         for item_id in sorted(collector.item_ids):
+            # Get variable name with optional name suffix
+            variable_name = collector.get_item_name(item_id)
             # Initialize each item quantity to 0 (not in inventory)
-            output_lines.append(f"{make_indent(indent_width)}item_{item_id} = 0")
+            output_lines.append(f"{make_indent(indent_width)}{variable_name} = 0")
+        # Blank line between subsections
+        output_lines.append("")
 
-        # Add a trailing blank line
+    # ── Weapons ──
+    if collector.weapon_ids:
+        # Subsection comment
+        output_lines.append(f"{make_indent(indent_width)}# Weapons")
+        # Iterate over weapons in sorted order for consistent output
+        for weapon_id in sorted(collector.weapon_ids):
+            # Get variable name with optional name suffix
+            variable_name = collector.get_weapon_name(weapon_id)
+            # Initialize each weapon quantity to 0 (not in inventory)
+            output_lines.append(f"{make_indent(indent_width)}{variable_name} = 0")
+        # Blank line between subsections
+        output_lines.append("")
+
+    # ── Armors ──
+    if collector.armor_ids:
+        # Subsection comment
+        output_lines.append(f"{make_indent(indent_width)}# Armors")
+        # Iterate over armors in sorted order for consistent output
+        for armor_id in sorted(collector.armor_ids):
+            # Get variable name with optional name suffix
+            variable_name = collector.get_armor_name(armor_id)
+            # Initialize each armor quantity to 0 (not in inventory)
+            output_lines.append(f"{make_indent(indent_width)}{variable_name} = 0")
+        # Blank line between subsections
         output_lines.append("")
 
     # Join all lines with newlines and return
