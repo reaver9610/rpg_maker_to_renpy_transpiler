@@ -37,7 +37,7 @@ Output File Structure:
 """
 
 from .collector import DataCollector
-from .helpers import safe_var, side_image_tag, join_with_interlines
+from .helpers import safe_var, side_image_tag, join_with_interlines, make_indent
 
 
 def _get_character_color(face_name: str) -> str:
@@ -111,7 +111,7 @@ def _get_character_color(face_name: str) -> str:
         return "#ffffff"
 
 
-def generate_characters_rpy(collector: DataCollector, interlines: int = 0) -> str:
+def generate_characters_rpy(collector: DataCollector, interlines: int = 0, indent_width: int = 4) -> str:
     """Generate characters.rpy with Ren'Py Character definitions.
 
     Creates a .rpy file containing `define` statements for every character
@@ -178,7 +178,7 @@ def generate_characters_rpy(collector: DataCollector, interlines: int = 0) -> st
     # Include an empty init python block as a placeholder
     # This allows for future Python code additions without restructuring
     output_lines.append("init python:")
-    output_lines.append("    pass")
+    output_lines.append(make_indent(indent_width) + "pass")
     output_lines.append("")
 
     # ── Character Definitions ──

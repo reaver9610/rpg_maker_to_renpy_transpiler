@@ -26,10 +26,13 @@ Multiple generators produce output files using Ren'Py named stores:
 - global_quests.rpy: Quest tracking in the game_quest store
 - side_images.rpy: Side image declarations
 - map_{id}_{Name}.rpy: Map placeholder (global label + autorun calls)
-- map_{id}_{Name}_autorun_{eid}.rpy: One per autorun event (local labels)
-- map_{id}_{Name}_event_{eid}.rpy: One per regular event (local labels)
-- map_{id}_{Name}_switches.rpy: Per-map self-switches in map-specific stores
-- game_flow.rpy: Start entry point
+- map_{id}_{Name}_event_{id}_{name}.rpy: One per autorun/regular event (local labels)
+    - game_flow.rpy: Start entry point
+
+    Output Examples:
+    - maps/.../map_1_Town.rpy: Map placeholder (global label + autorun calls)
+    - maps/.../map_1_Town_events/map_1_Town_event_3_intro.rpy: One per autorun event (local labels)
+    - maps/.../map_1_Town_events/map_1_Town_event_11_shopkeeper.rpy: One per regular event (local labels)
 
 Public API:
     transpile_to_renpy: Main entry point that processes input files and writes output.
@@ -109,6 +112,7 @@ def transpile_to_renpy(
     multiline: bool = False,
     interlines: int = 0,
     interlines_targets: set[str] | None = None,
+    indent_width: int = 4,
 ) -> None:
     """Transpile one or more RPG Maker MV JSON maps to Ren'Py .rpy scripts.
 
@@ -140,8 +144,8 @@ def transpile_to_renpy(
     - outputs/global_quests.rpy: game_quest store (quest_log)
     - outputs/side_images.rpy: Side image declarations
     - outputs/maps/.../map_1_Town.rpy: Map placeholder (label map_1_Town:)
-    - outputs/maps/.../map_1_Town_autorun_3.rpy: Autorun event (local label)
-    - outputs/maps/.../map_1_Town_event_11.rpy: Regular event (local label)
+    - outputs/maps/.../map_1_Town_event_3_intro.rpy: Autorun event (local label)
+    - outputs/maps/.../map_1_Town_event_11_shopkeeper.rpy: Regular event (local label)
     - outputs/maps/.../map_1_Town_switches.rpy: Town self-switches
     - outputs/game_flow.rpy: Start entry point
 
@@ -159,6 +163,7 @@ def transpile_to_renpy(
         "global_items", "global_economy", "global_quests", "side_images", "game_flow".
         If None and interlines > 0, defaults to {"maps"}.
         If interlines == 0, this parameter is ignored.
+        indent_width: Number of spaces per indentation level. Default is 4.
 
     Example:
         >>> transpile_to_renpy(["inputs/Map001.json"], "renpy_output/")
@@ -176,7 +181,7 @@ def transpile_to_renpy(
         [OK] renpy_output/global_quests.rpy
         [OK] renpy_output/side_images.rpy
         [OK] renpy_output/maps/map_1_Town/map_1_Town.rpy
-        [OK] renpy_output/maps/map_1_Town/map_1_Town_autorun_3.rpy
+        [OK] renpy_output/maps/map_1_Town/map_1_Town_event_3_intro.rpy
         [OK] renpy_output/maps/map_1_Town/map_1_Town_event_11.rpy
         [OK] renpy_output/maps/map_1_Town/map_1_Town_switches.rpy
         [OK] renpy_output/game_flow.rpy
@@ -410,7 +415,7 @@ def transpile_to_renpy(
     
     # Generate the character definitions
     character_interlines = interlines if "characters" in interlines_targets else 0
-    character_definitions = generate_characters_rpy(collector, interlines=character_interlines)
+    character_definitions = generate_characters_rpy(collector, interlines=character_interlines, indent_width=indent_width)
     
     # Build the output file path
     characters_path = os.path.join(output_dir, "characters.rpy")
@@ -427,7 +432,7 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     
     global_switches_interlines = interlines if "global_switches" in interlines_targets else 0
-    global_switches_src = generate_global_switches_rpy(collector, interlines=global_switches_interlines)
+    global_switches_src = generate_global_switches_rpy(collector, interlines=global_switches_interlines, indent_width=indent_width)
     global_switches_path = os.path.join(output_dir, "global_switches.rpy")
     with open(global_switches_path, "w", encoding="utf-8") as output_file:
         output_file.write(global_switches_src)
@@ -438,7 +443,7 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     
     global_variables_interlines = interlines if "global_variables" in interlines_targets else 0
-    global_variables_src = generate_global_variables_rpy(collector, interlines=global_variables_interlines)
+    global_variables_src = generate_global_variables_rpy(collector, interlines=global_variables_interlines, indent_width=indent_width)
     global_variables_path = os.path.join(output_dir, "global_variables.rpy")
     with open(global_variables_path, "w", encoding="utf-8") as output_file:
         output_file.write(global_variables_src)
@@ -449,7 +454,7 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     
     global_items_interlines = interlines if "global_items" in interlines_targets else 0
-    global_items_src = generate_global_items_rpy(collector, interlines=global_items_interlines)
+    global_items_src = generate_global_items_rpy(collector, interlines=global_items_interlines, indent_width=indent_width)
     if global_items_src:
         global_items_path = os.path.join(output_dir, "global_items.rpy")
         with open(global_items_path, "w", encoding="utf-8") as output_file:
@@ -461,7 +466,7 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     
     global_economy_interlines = interlines if "global_economy" in interlines_targets else 0
-    global_economy_src = generate_global_economy_rpy(interlines=global_economy_interlines)
+    global_economy_src = generate_global_economy_rpy(interlines=global_economy_interlines, indent_width=indent_width)
     global_economy_path = os.path.join(output_dir, "global_economy.rpy")
     with open(global_economy_path, "w", encoding="utf-8") as output_file:
         output_file.write(global_economy_src)
@@ -472,7 +477,7 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     
     global_quests_interlines = interlines if "global_quests" in interlines_targets else 0
-    global_quests_src = generate_global_quests_rpy(interlines=global_quests_interlines)
+    global_quests_src = generate_global_quests_rpy(interlines=global_quests_interlines, indent_width=indent_width)
     global_quests_path = os.path.join(output_dir, "global_quests.rpy")
     with open(global_quests_path, "w", encoding="utf-8") as output_file:
         output_file.write(global_quests_src)
@@ -484,7 +489,7 @@ def transpile_to_renpy(
     
     # Generate the side image declarations
     side_images_interlines = interlines if "side_images" in interlines_targets else 0
-    side_images_definitions = generate_side_images_rpy(collector, interlines=side_images_interlines)
+    side_images_definitions = generate_side_images_rpy(collector, interlines=side_images_interlines, indent_width=indent_width)
     
     # Build the output file path
     side_images_path = os.path.join(output_dir, "side_images.rpy")
@@ -504,8 +509,7 @@ def transpile_to_renpy(
     #   map_{id}_{Name}.rpy                        — global label placeholder
     #   map_{id}_{Name}_switches.rpy               — per-map self-switches
     #   map_{id}_{Name}_events/                     — events subfolder
-    #       map_{id}_{Name}_autorun_{eid}.rpy      — one per autorun event
-    #       map_{id}_{Name}_event_{eid}.rpy        — one per regular event
+    #       map_{id}_{Name}_event_{id}_{name}.rpy  — one per autorun/regular event
 
     # Helper to write a file and log it
     def _write_file(path: str, content: str) -> None:
@@ -524,6 +528,7 @@ def transpile_to_renpy(
             map_data, collector, map_id, all_map_data,
             multiline=multiline, interlines=map_interlines,
             map_name=map_name_for_header,
+            indent_width=indent_width,
         )
 
         # Generate split output: map placeholder, autorun files, event files
@@ -555,14 +560,18 @@ def transpile_to_renpy(
             events_dir = os.path.join(full_folder_path, f"{result.map_label_name}_events")
             os.makedirs(events_dir, exist_ok=True)
 
-            # Write autorun files: map_{id}_{Name}_autorun_{eid}.rpy
-            for event_id, source in result.autorun.items():
-                autorun_path = os.path.join(events_dir, f"{result.map_label_name}_autorun_{event_id}.rpy")
+            # Write autorun files: map_{id}_{Name}_{event_label}.rpy
+            # filename_suffix comes from safe_label() and is descriptive
+            # e.g., "event_57_auto" → map_3_Refugee_Camp_event_57_auto.rpy
+            for event_id, (source, filename_suffix) in result.autorun.items():
+                autorun_path = os.path.join(events_dir, f"{result.map_label_name}_{filename_suffix}.rpy")
                 _write_file(autorun_path, source)
 
-            # Write event files: map_{id}_{Name}_event_{eid}.rpy
-            for event_id, source in result.events.items():
-                event_path = os.path.join(events_dir, f"{result.map_label_name}_event_{event_id}.rpy")
+            # Write event files: map_{id}_{Name}_{event_label}.rpy
+            # filename_suffix comes from safe_label() and is descriptive
+            # e.g., "event_40_under" → map_3_Refugee_Camp_event_40_under.rpy
+            for event_id, (source, filename_suffix) in result.events.items():
+                event_path = os.path.join(events_dir, f"{result.map_label_name}_{filename_suffix}.rpy")
                 _write_file(event_path, source)
 
         # ── Write per-map self-switch file ──
@@ -570,6 +579,7 @@ def transpile_to_renpy(
         map_switches_src = generate_map_switches_rpy(
             collector, map_id, map_name_raw,
             interlines=map_interlines,
+            indent_width=indent_width,
         )
         if map_switches_src:
             switches_path = f"{base_path}_switches.rpy"
@@ -582,7 +592,7 @@ def transpile_to_renpy(
     # Generate the game flow navigation
     # Apply interlines only if "game_flow" is in targets
     game_flow_interlines = interlines if "game_flow" in interlines_targets else 0
-    game_flow_source = generate_game_flow_rpy(all_map_data, collector, interlines=game_flow_interlines)
+    game_flow_source = generate_game_flow_rpy(all_map_data, collector, interlines=game_flow_interlines, indent_width=indent_width)
     
     # Build the output file path
     game_flow_path = os.path.join(output_dir, "game_flow.rpy")

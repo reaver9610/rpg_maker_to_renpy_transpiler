@@ -525,3 +525,26 @@ def join_with_interlines(lines: list[str], interlines: int) -> str:
 
     # Step 4: Join all pieces into the final output string
     return "".join(result)
+
+
+def make_indent(indent_width: int, level: int = 1) -> str:
+    """Generate indentation string with configurable width.
+
+    Args:
+        indent_width: Number of spaces per indentation level.
+        level: Indentation level (number of levels to indent).
+
+    Returns:
+        String of spaces representing the indentation.
+
+    Example:
+        >>> make_indent(4, 1)
+        '    '
+        >>> make_indent(4, 2)
+        '        '
+        >>> make_indent(2, 1)
+        '  '
+        >>> make_indent(2, 3)
+        '      '
+    """
+    return " " * (indent_width * level)

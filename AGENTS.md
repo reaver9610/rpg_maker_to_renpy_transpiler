@@ -28,30 +28,34 @@ renpy_output/              # Alternative output directory (deprecated)
 
 ### Output File Structure (Ren'Py Named Stores)
 
+Event filenames include the full descriptive name derived from the RPG Maker event name
+via `safe_label()`. Format: `{map_label}_{event_label}.rpy` where `event_label` is the
+sanitized `event_{id}_{name}` (e.g., `event_40_under`, `event_57_auto`).
+
 ```
 outputs/
-  characters.rpy                          # define claire = Character(...)
-  global_switches.rpy                     # init python in game_switch:
-  global_variables.rpy                    # init python in game_vars:
-  global_items.rpy                        # init python in game_items:
-  global_economy.rpy                      # init python in game_economy:
-  global_quests.rpy                       # init python in game_quest:
-  side_images.rpy                         # image side claire 0 = ...
-  game_flow.rpy                           # label start: jump map_1_Checkpoint
+  characters.rpy                                    # define claire = Character(...)
+  global_switches.rpy                               # init python in game_switch:
+  global_variables.rpy                              # init python in game_vars:
+  global_items.rpy                                  # init python in game_items:
+  global_economy.rpy                                # init python in game_economy:
+  global_quests.rpy                                 # init python in game_quest:
+  side_images.rpy                                   # image side claire 0 = ...
+  game_flow.rpy                                     # label start: jump map_1_Checkpoint
   maps/
     map_1_Checkpoint/
-      map_1_Checkpoint.rpy                # label map_1_Checkpoint: call .event_3_auto; return
-      map_1_Checkpoint_switches.rpy       # init python in map_1_checkpoint:
-      map_1_Checkpoint_events/            # events subfolder
-        map_1_Checkpoint_autorun_3.rpy    # label map_1_Checkpoint.event_3_auto: ...
-        map_1_Checkpoint_event_2.rpy      # label map_1_Checkpoint.event_2: ...
-        map_1_Checkpoint_event_4.rpy      # label map_1_Checkpoint.event_4: ...
+      map_1_Checkpoint.rpy                          # label map_1_Checkpoint: call .event_3_intro; return
+      map_1_Checkpoint_switches.rpy                 # init python in map_1_checkpoint:
+      map_1_Checkpoint_events/                      # events subfolder
+        map_1_Checkpoint_event_3_intro.rpy          # label map_1_Checkpoint.event_3_intro: ...
+        map_1_Checkpoint_event_2_ev002.rpy          # label map_1_Checkpoint.event_2_ev002: ...
+        map_1_Checkpoint_event_4_torch.rpy          # label map_1_Checkpoint.event_4_torch: ...
     map_3_Refugee_Camp/
       map_3_Refugee_Camp.rpy
       map_3_Refugee_Camp_switches.rpy
       map_3_Refugee_Camp_events/
-        map_3_Refugee_Camp_autorun_57.rpy
-        map_3_Refugee_Camp_event_1.rpy
+        map_3_Refugee_Camp_event_57_auto.rpy
+        map_3_Refugee_Camp_event_1_ev001.rpy
 ```
 
 ### Local Label Convention
@@ -65,12 +69,12 @@ label map_3_Refugee_Camp:
     call .event_39_roadblock
     return
 
-# Autorun event (map_3_Refugee_Camp_autorun_57.rpy)
+# Autorun event (map_3_Refugee_Camp_event_57_auto.rpy)
 label map_3_Refugee_Camp.event_57_auto:
     Claire "Welcome!"
     return
 
-# Regular event (map_3_Refugee_Camp_event_11.rpy)
+# Regular event (map_3_Refugee_Camp_event_11_torch.rpy)
 label map_3_Refugee_Camp.event_11_torch:
     return
 ```
@@ -95,7 +99,7 @@ non-return lines. If none found, the event file is not written.
 |---|---|---|
 | Global Switch | `game_switch` | `game_switch.switch_5_paid` |
 | Global Variable | `game_vars` | `game_vars.var_2_defiance` |
-| Self-Switch | `map_{id}_{name}` | `map_1_checkpoint.switch_3_A` |
+| Self-Switch | `map_{id}_{name}` | `map_3_refugee_camp.switch_40_under_A` |
 | Item | `game_items` | `game_items.item_1` |
 | Gold | `game_economy` | `game_economy.gold` |
 | Quest Log | `game_quest` | `game_quest.quest_log` |

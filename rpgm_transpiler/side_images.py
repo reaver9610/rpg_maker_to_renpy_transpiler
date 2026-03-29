@@ -40,10 +40,10 @@ Output File Structure:
 """
 
 from .collector import DataCollector
-from .helpers import side_image_tag, join_with_interlines
+from .helpers import side_image_tag, join_with_interlines, make_indent
 
 
-def generate_side_images_rpy(collector: DataCollector, interlines: int = 0) -> str:
+def generate_side_images_rpy(collector: DataCollector, interlines: int = 0, indent_width: int = 4) -> str:
     """Generate side_images.rpy with Ren'Py side image declarations.
 
     Creates a .rpy file containing `image side` statements for every

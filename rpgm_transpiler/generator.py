@@ -62,18 +62,22 @@ class MapGenerationResult:
         map_label: Content for the map placeholder file
             (e.g., ``map_3_Refugee_Camp.rpy``).
             Contains the global label and calls to autorun events.
-        autorun: Mapping of event ID → file content for each autorun event.
-            Each file defines a fully qualified local label
-            (e.g., ``label map_3_Refugee_Camp.event_3_auto:``).
-        events: Mapping of event ID → file content for each regular event.
-            Each file defines a fully qualified local label
-            (e.g., ``label map_3_Refugee_Camp.event_11:``).
+        autorun: Mapping of event ID → (source, filename_suffix) for each autorun event.
+            ``source`` is the complete .rpy file content.
+            ``filename_suffix`` is the descriptive label string
+            (e.g., ``"event_57_auto"``) used to build the filename:
+            ``{map_label_name}_{filename_suffix}.rpy``.
+        events: Mapping of event ID → (source, filename_suffix) for each regular event.
+            ``source`` is the complete .rpy file content.
+            ``filename_suffix`` is the descriptive label string
+            (e.g., ``"event_40_under"``) used to build the filename:
+            ``{map_label_name}_{filename_suffix}.rpy``.
         map_label_name: The global label name used across all files
             (e.g., ``"map_3_Refugee_Camp"``).
     """
     map_label: str
-    autorun: dict[int, str] = field(default_factory=dict)
-    events: dict[int, str] = field(default_factory=dict)
+    autorun: dict[int, tuple[str, str]] = field(default_factory=dict)
+    events: dict[int, tuple[str, str]] = field(default_factory=dict)
     map_label_name: str = ""
 
 
@@ -136,6 +140,7 @@ class RenPyGenerator:
         multiline: bool = False,
         interlines: int = 0,
         map_name: str | None = None,
+        indent_width: int = 4,
     ) -> None:
         """Initialize the generator with map data and shared metadata.
 
@@ -159,11 +164,13 @@ class RenPyGenerator:
                 If None, the generator cannot resolve transfer target names.
             multiline: If True, emit multi-line dialogue as Ren'Py triple-quoted strings.
                 Otherwise, concatenate TEXT_LINE commands into single dialogue lines.
-            interlines: Number of blank lines to insert between each output line.
-                Default 0 means no extra spacing.
-            map_name: Human-readable name for this map (from MapInfos.json).
-                If None, falls back to displayName from map_data or "Unknown".
-                Used in file header comments.
+        interlines: Number of blank lines to insert between each output line.
+        Default 0 means no extra spacing.
+        map_name: Human-readable name for this map (from MapInfos.json).
+        If None, falls back to displayName from map_data or "Unknown".
+        Used in file header comments.
+        indent_width: Number of spaces per indentation level.
+        Defaults to 4.
 
         Example:
             >>> collector = DataCollector()
@@ -201,6 +208,10 @@ class RenPyGenerator:
         # Priority: provided map_name > displayName from map_data > "Unknown"
         self.map_name = map_name or map_data.get("displayName", "Unknown")
 
+        # Store the indent width for use in _indent method
+        # Number of spaces per indentation level
+        self.indent_width = indent_width
+
         # Store the global label name for this map
         # Used for local label qualification: map_{id}_{Title_Case_Name}
         # Example: "map_3_Refugee_Camp"
@@ -209,7 +220,17 @@ class RenPyGenerator:
         # Store the Ren'Py named store name for this map's self-switches
         # Used in self-switch references: $ map_{id}_{name}.switch_{eid}_{ch} = True
         self.map_store_name = collector.get_self_switch_store_name(map_id)
-        
+
+        # Build a lookup dict of event_id → safe_label for descriptive self-switch names
+        # Example: {40 → "event_40_under", 57 → "event_57_auto"}
+        # Used to generate switch_40_under_A instead of switch_40_A
+        self._event_names: dict[int, str] = {}
+        for event in map_data.get("events", []):
+            if event is not None:
+                eid = event["id"]
+                ename = event.get("name", f"EV{eid:03d}")
+                self._event_names[eid] = safe_label(ename, eid)
+
         # Initialize the output buffer
         # All generated Ren'Py lines are appended here
         self.lines: list[str] = []
@@ -240,20 +261,24 @@ class RenPyGenerator:
         """Return the current indentation prefix.
 
         Ren'Py uses 4-space indentation for blocks (labels, if/else, menu).
-        This method returns the appropriate number of spaces for the current
-        indentation level.
+        This method returns the appropriate number of spaces based on the indent_width setting.
 
         Returns:
             String of spaces matching the current indentation depth.
-            Example: level 2 → "        " (8 spaces)
+            Example: level 2 with indent_width 4 → "        " (8 spaces)
+            Example: level 2 with indent_width 2 → "    " (4 spaces)
 
         Example:
             >>> self.indent_level = 2
+            >>> self.indent_width = 4
             >>> self._indent()
             '        '  # 8 spaces
+            >>> self.indent_width = 2
+            >>> self._indent()
+            '    '  # 4 spaces
         """
-        # Calculate spaces: 4 spaces per indent level
-        return " " * self.indent_level
+        # Calculate indentation: indent_width spaces per indent level
+        return " " * (self.indent_level * self.indent_width)
 
     def _emit(self, line: str = "") -> None:
         """Append a line to the output buffer with current indentation.
@@ -333,6 +358,27 @@ class RenPyGenerator:
         # max(0, ...) prevents negative indentation
         self.indent_level = max(0, self.indent_level - 1)
 
+    def _self_switch_name(self, event_id: int, channel: str) -> str:
+        """Build a descriptive self-switch variable name.
+
+        Uses the event's safe label to produce readable names like
+        ``switch_40_under_A`` instead of the generic ``switch_40_A``.
+
+        Args:
+            event_id: The numeric event ID.
+            channel: The self-switch channel letter (``"A"``, ``"B"``, ``"C"``, ``"D"``).
+
+        Returns:
+            Descriptive self-switch variable name.
+            Example: ``"switch_40_under_A"``
+        """
+        label = self._event_names.get(event_id, "")
+        if label:
+            # Strip "event_" prefix: "event_40_under" → "40_under"
+            name_part = label.replace("event_", "", 1)
+            return f"switch_{name_part}_{channel}"
+        return f"switch_{event_id}_{channel}"
+
     def generate(self) -> MapGenerationResult:
         """Generate Ren'Py source split into map placeholder, autorun, and event files.
 
@@ -361,19 +407,19 @@ class RenPyGenerator:
 
         # Generate one autorun file per autorun event
         # Skip empty events (those with no meaningful commands)
-        autorun_files: dict[int, str] = {}
+        autorun_files: dict[int, tuple[str, str]] = {}
         for event in autorun_events:
-            event_id, source = self._generate_event_file(event, is_autorun=True)
-            if source is not None:
-                autorun_files[event_id] = source
+            event_id, result_tuple = self._generate_event_file(event, is_autorun=True)
+            if result_tuple is not None:
+                autorun_files[event_id] = result_tuple
 
         # Generate one event file per regular event
         # Skip empty events (those with no meaningful commands)
-        event_files: dict[int, str] = {}
+        event_files: dict[int, tuple[str, str]] = {}
         for event in regular_events:
-            event_id, source = self._generate_event_file(event, is_autorun=False)
-            if source is not None:
-                event_files[event_id] = source
+            event_id, result_tuple = self._generate_event_file(event, is_autorun=False)
+            if result_tuple is not None:
+                event_files[event_id] = result_tuple
 
         return MapGenerationResult(
             map_label=map_label,
@@ -485,23 +531,34 @@ class RenPyGenerator:
         self,
         event: dict[str, Any],
         is_autorun: bool,
-    ) -> tuple[int, str | None]:
+    ) -> tuple[int, tuple[str, str] | None]:
         """Generate a single .rpy file for one event.
 
         Creates a fully qualified local label under the map's global label
-        and emits the event's page content.
+        and emits the event's page content.  Also computes the filename
+        suffix (the label portion like ``"event_40_under"``) used to build
+        the output filename.
 
         Events that contain no meaningful commands (only a label and return)
-        are detected and skipped by returning ``None`` as the source.
+        are detected and skipped by returning ``None``.
 
         Args:
             event: Parsed RPG Maker event dict.
             is_autorun: Whether this is an autorun event (affects header comment).
 
         Returns:
-            Two-tuple of ``(event_id, file_content)``.  ``file_content`` is
-            ``None`` when the event is empty (no commands beyond label + return).
+            Two-tuple of ``(event_id, (source, label) | None)``.
+            ``source`` is the complete .rpy file content.
+            ``label`` is the safe label string for filename construction
+            (e.g., ``"event_40_under"``).
+            Returns ``None`` as the second element when the event is empty.
         """
+        # Compute the safe label for this event
+        # This is used both in the file content and for the output filename
+        event_id = event["id"]
+        event_name = event.get("name", f"EV{event_id:03d}")
+        label = safe_label(event_name, event_id)
+
         # Save current output buffer and indentation state
         saved_lines = self.lines
         saved_indent = self.indent_level
@@ -518,9 +575,9 @@ class RenPyGenerator:
         self._current_face = None
         self._current_face_id = None
 
-        # Emit header and event content
+        # Emit header and event content, passing pre-computed label
         self._emit_header()
-        self._emit_event(event, use_local_label=True)
+        self._emit_event(event, use_local_label=True, label=label)
 
         # Join lines into final source
         source = join_with_interlines(self.lines, self.interlines)
@@ -541,7 +598,7 @@ class RenPyGenerator:
         if self._is_empty_event_source(source):
             return event["id"], None
 
-        return event["id"], source
+        return event["id"], (source, label)
 
     @staticmethod
     def _is_empty_event_source(source: str) -> bool:
@@ -580,6 +637,7 @@ class RenPyGenerator:
         self,
         event: dict[str, Any],
         use_local_label: bool = False,
+        label: str | None = None,
     ) -> None:
         """Generate Ren'Py code for a single RPG Maker event.
 
@@ -603,6 +661,10 @@ class RenPyGenerator:
             use_local_label: If True, emit a fully qualified local label
                 (``label {map_label_name}.{event_label}:``).
                 If False, emit a plain global label (``label {event_label}:``).
+            label: Pre-computed safe label string (e.g., ``"event_40_under"``).
+                If None, computed from the event name and ID via ``safe_label()``.
+                Passing a pre-computed label avoids duplicate computation when
+                the caller already has it.
 
         Event Label Format:
             # ── Event {id}: "{name}" (pos {x},{y}) ──
@@ -619,7 +681,9 @@ class RenPyGenerator:
         
         # Generate a safe Ren'Py label from the event name and ID
         # Example: "Town Elder", 5 → "event_5_town_elder"
-        label = safe_label(event_name, event_id)
+        # Use pre-computed label if provided, otherwise compute it now
+        if label is None:
+            label = safe_label(event_name, event_id)
         
         # Build the fully qualified label if local mode is requested
         # Example: "map_3_Refugee_Camp.event_3_auto"
@@ -956,7 +1020,7 @@ class RenPyGenerator:
                         self._emit(f"$ {variable_name} {operator_symbol} {operand_value}")
 
             # ── CONTROL_SELF_SWITCH (code 123): Toggle event-local switch ──
-            # Emits: $ map_{id}_{name}.switch_{event_id}_{channel} = True/False
+            # Emits: $ map_{id}_{name}.switch_{id}_{name}_{channel} = True/False
             elif command_code == CMD["CONTROL_SELF_SWITCH"]:
                 # Flush any pending text
                 self._flush_text()
@@ -968,8 +1032,11 @@ class RenPyGenerator:
                 # RPG Maker: 0 = ON (True), 1 = OFF (False)
                 renpy_value = "True" if parameters[1] == 0 else "False"
                 
+                # Build descriptive self-switch name: switch_40_under_A
+                switch_name = self._self_switch_name(event_id, channel)
+                
                 # Emit the self-switch assignment using the per-map store
-                self._emit(f"$ {self.map_store_name}.switch_{event_id}_{channel} = {renpy_value}")
+                self._emit(f"$ {self.map_store_name}.{switch_name} = {renpy_value}")
 
             # ── CHANGE_GOLD (code 125): Add/remove gold ──
             # Emits: $ game_economy.gold += amount or $ game_economy.gold -= amount
@@ -1442,7 +1509,8 @@ class RenPyGenerator:
         elif command_code == CMD["CONTROL_SELF_SWITCH"]:
             channel = parameters[0]
             renpy_value = "True" if parameters[1] == 0 else "False"
-            self._emit(f"$ {self.map_store_name}.switch_{event_id}_{channel} = {renpy_value}")
+            switch_name = self._self_switch_name(event_id, channel)
+            self._emit(f"$ {self.map_store_name}.{switch_name} = {renpy_value}")
 
         # ── CHANGE_GOLD: Add/remove gold ──
         elif command_code == CMD["CHANGE_GOLD"]:
@@ -1539,8 +1607,10 @@ class RenPyGenerator:
         # Condition type 4: Self-switch must be ON
         if conditions.get("selfSwitchValid"):
             channel = conditions.get("selfSwitchCh", "A")
+            # Build descriptive self-switch name: switch_40_under_A
+            switch_name = self._self_switch_name(event_id, channel)
             # Check if self-switch is True using the per-map store
-            condition_checks.append(f"{self.map_store_name}.switch_{event_id}_{channel}")
+            condition_checks.append(f"{self.map_store_name}.{switch_name}")
 
         # Condition type 5: Item requirement
         if conditions.get("itemValid"):
@@ -1631,13 +1701,16 @@ class RenPyGenerator:
             channel = parameters[1]
             expected_value = parameters[2]
             
+            # Build descriptive self-switch name: switch_40_under_A
+            switch_name = self._self_switch_name(event_id, channel)
+            
             # Build the condition expression using the per-map store
             if expected_value == 0:
                 # Expected ON: self-switch is True
-                return f"{self.map_store_name}.switch_{event_id}_{channel}"
+                return f"{self.map_store_name}.{switch_name}"
             else:
                 # Expected OFF: self-switch is False (use "not")
-                return f"not {self.map_store_name}.switch_{event_id}_{channel}"
+                return f"not {self.map_store_name}.{switch_name}"
 
         # ── Condition type 7: Gold comparison ──
         elif condition_type == 7:

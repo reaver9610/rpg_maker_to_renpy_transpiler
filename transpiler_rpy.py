@@ -146,6 +146,15 @@ def parse_args() -> argparse.Namespace:
         help="Output directory for generated .rpy files (default: outputs)"
     )
 
+    # Indent width option
+    argument_parser.add_argument(
+        "-s", "--indent-width",
+        metavar="N",
+        type=int,
+        default=4,
+        help="Number of spaces per indentation level (default: 4)"
+    )
+
     # Interlines option (number of blank lines between each output line)
     argument_parser.add_argument(
         "-n", "--interlines",
@@ -405,6 +414,12 @@ def main() -> None:
     transpile_to_renpy pipeline.
     """
     cli_args = parse_args()
+
+    # Validate indent_width
+    if cli_args.indent_width < 1:
+        print("Error: indent width must be at least 1")
+        sys.exit(1)
+
     resolved_paths = collect_paths(cli_args)
     transpile_to_renpy(
         resolved_paths,
@@ -412,6 +427,7 @@ def main() -> None:
         multiline=cli_args.multiline,
         interlines=cli_args.interlines,
         interlines_targets=cli_args.interlines_targets,
+        indent_width=cli_args.indent_width,
     )
 
 

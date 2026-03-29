@@ -50,6 +50,7 @@ import re
 from typing import Any
 
 from .constants import CMD
+from .helpers import safe_label
 
 
 class DataCollector:
@@ -90,6 +91,10 @@ class DataCollector:
         All self-switch references, grouped by map
         Example: {1: {(1, "A"), (1, "B")}, 3: {(5, "A")}}
 
+    - event_names: dict[map_id → dict[event_id → safe_label]]
+        Per-map lookup of event names for descriptive self-switch naming
+        Example: {3: {40: "event_40_under", 57: "event_57_auto"}}
+
     - item_ids: set[int]
         All item IDs referenced in conditions or change commands
         Example: {1, 5, 12}
@@ -119,6 +124,7 @@ class DataCollector:
             switch_ids (set): Empty set for global switch IDs
             variable_ids (set): Empty set for global variable IDs
             self_switches (dict): Empty dict for map_id → set of (event_id, channel) tuples
+            event_names (dict): Empty dict for map_id → {event_id → safe_label} mappings
             item_ids (set): Empty set for item IDs
             map_ids (set): Empty set for map IDs
             plugin_commands (list): Empty list for plugin command strings
@@ -145,6 +151,12 @@ class DataCollector:
         # Grouped by map_id: {map_id → set of (event_id, channel_letter)}
         # Used by generate_map_switches_rpy() to create per-map store declarations
         self.self_switches: dict[int, set[tuple[int, str]]] = {}
+        
+        # Event names: per-map lookup of event_id → safe_label name
+        # Used by generate_map_switches_rpy() for descriptive self-switch naming
+        # Format: {map_id → {event_id → "event_{id}_{sanitized_name}"}}
+        # Example: {3 → {40 → "event_40_under", 57 → "event_57_auto"}}
+        self.event_names: dict[int, dict[int, str]] = {}
         
         # Items: inventory counters
         # Used by generate_global_items_rpy() to initialize: item_{id} = 0
@@ -357,6 +369,43 @@ class DataCollector:
         sanitized = self._sanitize_name_for_variable(raw_name)
         return f"map_{map_id}_{sanitized}"
 
+    def get_self_switch_name(self, map_id: int, event_id: int, channel: str) -> str:
+        """Get a descriptive self-switch variable name.
+
+        Constructs the variable name used in Ren'Py code for a self-switch
+        reference.  Includes the event's safe label for readability.
+
+        Format: ``switch_{event_id}_{event_name}_{channel}``
+        Example: ``switch_40_under_A``
+
+        Falls back to ``switch_{event_id}_{channel}`` when the event name
+        is not available (e.g., event not found in the map data).
+
+        Args:
+            map_id: The numeric map ID.
+            event_id: The numeric event ID.
+            channel: The self-switch channel letter (``"A"``, ``"B"``, ``"C"``, or ``"D"``).
+
+        Returns:
+            Descriptive self-switch variable name.
+
+        Example:
+            >>> collector.event_names = {3: {40: "event_40_under"}}
+            >>> collector.get_self_switch_name(3, 40, "A")
+            'switch_40_under_A'
+            >>> # Unknown event falls back to ID-only format
+            >>> collector.get_self_switch_name(3, 999, "A")
+            'switch_999_A'
+        """
+        map_names = self.event_names.get(map_id, {})
+        label = map_names.get(event_id, "")
+        if label:
+            # Strip the "event_" prefix for self-switch naming
+            # "event_40_under" → "40_under", then build: switch_40_under_A
+            name_part = label.replace("event_", "", 1)
+            return f"switch_{name_part}_{channel}"
+        return f"switch_{event_id}_{channel}"
+
     def _get_switch_raw_name(self, switch_id: int) -> str | None:
         """Get the raw name of a switch from System.json.
 
@@ -457,6 +506,11 @@ class DataCollector:
             # Get the event's numeric ID
             # This ID is used in self-switch keys: selfswitch_{event_id}_{channel}
             event_id = event["id"]
+            
+            # Store the event's safe label for descriptive self-switch naming
+            # Example: "Under" → "event_40_under" (used in switch_40_under_A)
+            event_name = event.get("name", f"EV{event_id:03d}")
+            self.event_names.setdefault(map_id, {})[event_id] = safe_label(event_name, event_id)
             
             # Step 4: Iterate over each page in the event
             # Events can have multiple pages with different conditions

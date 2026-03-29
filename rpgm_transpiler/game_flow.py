@@ -16,12 +16,12 @@ Each map has its own placeholder file that defines the global label::
         call .event_39_roadblock_setup
         return
 
-    # maps/map_3_Refugee_Camp/map_3_Refugee_Camp_autorun_3.rpy
+    # maps/map_3_Refugee_Camp/map_3_Refugee_Camp_events/map_3_Refugee_Camp_event_3_auto.rpy
     label map_3_Refugee_Camp.event_3_auto:
         # autorun content
         return
 
-    # maps/map_3_Refugee_Camp/map_3_Refugee_Camp_event_11.rpy
+    # maps/map_3_Refugee_Camp/map_3_Refugee_Camp_events/map_3_Refugee_Camp_event_11_torch.rpy
     label map_3_Refugee_Camp.event_11:
         # event content
         return
@@ -44,13 +44,14 @@ Output File Structure:
 """
 
 from .collector import DataCollector
-from .helpers import safe_map_label, join_with_interlines
+from .helpers import safe_map_label, join_with_interlines, make_indent
 
 
 def generate_game_flow_rpy(
     all_map_data: dict[int, dict],
     collector: DataCollector,
     interlines: int = 0,
+    indent_width: int = 4,
 ) -> str:
     """Generate game_flow.rpy with the ``start`` entry point.
 
@@ -91,11 +92,11 @@ def generate_game_flow_rpy(
     output_lines.append("label start:")
 
     # List all available maps as commented-out alternatives
-    output_lines.append("    # Change this to your starting map")
+    output_lines.append(f"{make_indent(indent_width)}# Change this to your starting map")
     for map_id in sorted(all_map_data.keys()):
         map_name = collector.map_names.get(map_id) or all_map_data[map_id].get("displayName", f"Map {map_id}")
         label = safe_map_label(map_id, map_name)
-        output_lines.append(f"    # jump {label}  # {map_name}")
+        output_lines.append(f"{make_indent(indent_width)}# jump {label}  # {map_name}")
 
     # Emit the default jump to the first map
     first_map_id = min(all_map_data.keys()) if all_map_data else 1
@@ -104,7 +105,7 @@ def generate_game_flow_rpy(
         or all_map_data.get(first_map_id, {}).get("displayName", f"Map{first_map_id}")
     )
     first_label = safe_map_label(first_map_id, first_map_name)
-    output_lines.append(f"    jump {first_label}")
+    output_lines.append(f"{make_indent(indent_width)}jump {first_label}")
 
     output_lines.append("")
 

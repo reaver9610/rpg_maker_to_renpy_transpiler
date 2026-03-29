@@ -45,10 +45,10 @@ and all variables at 0.
 """
 
 from .collector import DataCollector
-from .helpers import join_with_interlines, to_title_case
+from .helpers import join_with_interlines, to_title_case, make_indent
 
 
-def generate_global_switches_rpy(collector: DataCollector, interlines: int = 0) -> str:
+def generate_global_switches_rpy(collector: DataCollector, interlines: int = 0, indent_width: int = 4) -> str:
     """Generate global_switches.rpy with default global switch declarations.
 
     Creates a .rpy file containing `init python in game_switch:` assignments for every
@@ -105,7 +105,7 @@ def generate_global_switches_rpy(collector: DataCollector, interlines: int = 0) 
 
             # Initialize each switch to False (OFF state)
             # In RPG Maker, switches default to OFF when a new game starts
-            output_lines.append(f"    {variable_name} = False")
+            output_lines.append(f"{make_indent(indent_width)}{variable_name} = False")
 
         # Add a trailing blank line
         output_lines.append("")
@@ -116,7 +116,7 @@ def generate_global_switches_rpy(collector: DataCollector, interlines: int = 0) 
     return join_with_interlines(output_lines, interlines)
 
 
-def generate_global_variables_rpy(collector: DataCollector, interlines: int = 0) -> str:
+def generate_global_variables_rpy(collector: DataCollector, interlines: int = 0, indent_width: int = 4) -> str:
     """Generate global_variables.rpy with default global variable declarations.
 
     Creates a .rpy file containing `init python in game_vars:` assignments for every
@@ -173,7 +173,7 @@ def generate_global_variables_rpy(collector: DataCollector, interlines: int = 0)
 
             # Initialize each variable to 0
             # In RPG Maker, variables default to 0 when a new game starts
-            output_lines.append(f"    {variable_name} = 0")
+            output_lines.append(f"{make_indent(indent_width)}{variable_name} = 0")
 
         # Add a trailing blank line
         output_lines.append("")
@@ -182,7 +182,7 @@ def generate_global_variables_rpy(collector: DataCollector, interlines: int = 0)
     return join_with_interlines(output_lines, interlines)
 
 
-def generate_global_items_rpy(collector: DataCollector, interlines: int = 0) -> str:
+def generate_global_items_rpy(collector: DataCollector, interlines: int = 0, indent_width: int = 4) -> str:
     """Generate global_items.rpy with default item inventory declarations.
 
     Creates a .rpy file containing `init python in game_items:` assignments for every
@@ -234,7 +234,7 @@ def generate_global_items_rpy(collector: DataCollector, interlines: int = 0) -> 
         # Iterate over items in sorted order for consistent output
         for item_id in sorted(collector.item_ids):
             # Initialize each item quantity to 0 (not in inventory)
-            output_lines.append(f"    item_{item_id} = 0")
+            output_lines.append(f"{make_indent(indent_width)}item_{item_id} = 0")
 
         # Add a trailing blank line
         output_lines.append("")
@@ -243,7 +243,7 @@ def generate_global_items_rpy(collector: DataCollector, interlines: int = 0) -> 
     return join_with_interlines(output_lines, interlines)
 
 
-def generate_global_economy_rpy(interlines: int = 0) -> str:
+def generate_global_economy_rpy(interlines: int = 0, indent_width: int = 4) -> str:
     """Generate global_economy.rpy with the gold (currency) declaration.
 
     Creates a .rpy file containing `init python in game_economy:` with the
@@ -287,7 +287,7 @@ def generate_global_economy_rpy(interlines: int = 0) -> str:
 
     # Initialize gold to 0 (starting with no money)
     # Game designers can modify this value for different starting conditions
-    output_lines.append("    gold = 0")
+    output_lines.append(f"{make_indent(indent_width)}gold = 0")
 
     # Add a trailing blank line
     output_lines.append("")
@@ -296,7 +296,7 @@ def generate_global_economy_rpy(interlines: int = 0) -> str:
     return join_with_interlines(output_lines, interlines)
 
 
-def generate_global_quests_rpy(interlines: int = 0) -> str:
+def generate_global_quests_rpy(interlines: int = 0, indent_width: int = 4) -> str:
     """Generate global_quests.rpy with the quest log declaration.
 
     Creates a .rpy file containing `init python in game_quest:` with the
@@ -339,7 +339,7 @@ def generate_global_quests_rpy(interlines: int = 0) -> str:
 
     # Initialize quest_log as an empty list
     # Quests are added via plugin commands during gameplay
-    output_lines.append("    quest_log = []")
+    output_lines.append(f"{make_indent(indent_width)}quest_log = []")
 
     # Add a trailing blank line
     output_lines.append("")
@@ -353,6 +353,7 @@ def generate_map_switches_rpy(
     map_id: int,
     map_name: str,
     interlines: int = 0,
+    indent_width: int = 4,
 ) -> str:
     """Generate a per-map self-switch declaration file.
 
@@ -421,9 +422,11 @@ def generate_map_switches_rpy(
     # Iterate over self-switches in sorted order
     # Sorting by (event_id, channel) ensures consistent output
     for event_id, channel in sorted(map_self_switches):
-        # Each self-switch is a simple boolean flag
-        # The variable name combines event_id and channel for uniqueness within the store
-        output_lines.append(f"    switch_{event_id}_{channel} = False")
+        # Build a descriptive variable name using the event's safe label
+        # Format: switch_{event_id}_{event_name}_{channel}
+        # Example: switch_40_under_A (for event 40 "Under", channel A)
+        switch_name = collector.get_self_switch_name(map_id, event_id, channel)
+        output_lines.append(f"{make_indent(indent_width)}{switch_name} = False")
 
     # Add a trailing blank line
     output_lines.append("")
