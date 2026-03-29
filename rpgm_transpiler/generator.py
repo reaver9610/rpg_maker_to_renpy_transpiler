@@ -131,6 +131,31 @@ class RenPyGenerator:
             return
     """
 
+    # Command codes that produce meaningful Ren'Py output.
+    # Used by proactive filtering to detect empty events early.
+    # SHOW_TEXT (101) is included because character face/sprite display
+    # is meaningful content in a visual novel engine.
+    _MEANINGFUL_COMMAND_CODES: frozenset[int] = frozenset({
+        CMD["SHOW_TEXT"],        # 101 - Face/sprite display
+        CMD["TEXT_LINE"],        # 401 - Dialogue text
+        CMD["SHOW_CHOICES"],     # 102 - Menu blocks
+        CMD["CONDITIONAL"],      # 111 - if/elif/else (requires recursion)
+        CMD["ELSE"],             # 411 - Else branch marker
+        CMD["END_CONDITIONAL"],  # 412 - Conditional end marker
+        CMD["WHEN_CHOICE"],      # 402 - Choice branch marker
+        CMD["WHEN_CANCEL"],      # 403 - Cancel branch marker
+        CMD["END_CHOICES"],      # 404 - Choice end marker
+        CMD["CONTROL_SWITCHES"], # 121 - $ game_switch...
+        CMD["CONTROL_VARIABLES"],# 122 - $ game_vars...
+        CMD["CONTROL_SELF_SWITCH"], # 123 - $ map_switches...
+        CMD["CHANGE_GOLD"],      # 125 - $ game_economy...
+        CMD["TRANSFER_PLAYER"],  # 201 - jump map_X
+        CMD["WAIT"],             # 230 - pause X
+        CMD["PLAY_SE"],          # 250 - play sound
+        CMD["PLUGIN_COMMAND"],   # 356 - Variable output
+        CMD["SCRIPT"],           # 355 - # [Script] comment
+    })
+
     def __init__(
         self,
         map_data: dict[str, Any],
@@ -553,6 +578,11 @@ class RenPyGenerator:
             (e.g., ``"event_40_under"``).
             Returns ``None`` as the second element when the event is empty.
         """
+        # ═══ PROACTIVE FILTERING: Check for meaningful content BEFORE generation ═══
+        # This avoids wasted work for empty events (decorative torches, glows, etc.)
+        if not self._event_has_meaningful_content(event):
+            return event["id"], None
+        
         # Compute the safe label for this event
         # This is used both in the file content and for the output filename
         event_id = event["id"]
@@ -600,6 +630,260 @@ class RenPyGenerator:
 
         return event["id"], (source, label)
 
+    # ═══════════════════════════════════════════════════════════════
+    # PROACTIVE EMPTY EVENT DETECTION
+    # ═══════════════════════════════════════════════════════════════
+    
+    def _is_meaningful_command_list(self, commands: list[dict[str, Any]]) -> bool:
+        """Recursively check if a command list has meaningful Ren'Py content.
+        
+        A command list is meaningful if it contains any command that produces
+        Ren'Py output. CONDITIONAL commands require recursive checking of
+        their branch contents. SHOW_CHOICES require checking choice branches.
+        
+        This method is used for proactive filtering: detecting empty events
+        before generating their .rpy files, avoiding wasted work.
+        
+        Args:
+            commands: List of RPG Maker command dicts with 'code' and 'parameters'.
+            
+        Returns:
+            True if the command list produces any Ren'Py output.
+            
+        Note:
+            SHOW_TEXT (101) is always considered meaningful because character
+            face/sprite display is important content in a visual novel engine.
+        """
+        i = 0
+        while i < len(commands):
+            cmd = commands[i]
+            code = cmd.get("code", 0)
+            
+            # END (0): Stop processing
+            if code == CMD["END"]:
+                break
+            
+            # SHOW_TEXT (101): Face/sprite display - ALWAYS meaningful for visual novels
+            if code == CMD["SHOW_TEXT"]:
+                return True
+            
+            # TEXT_LINE (401): Meaningful dialogue content
+            if code == CMD["TEXT_LINE"]:
+                return True
+            
+            # SHOW_CHOICES (102): Menu block - check branches for content
+            if code == CMD["SHOW_CHOICES"]:
+                if self._check_choice_branches(commands, i):
+                    return True
+                # Skip past this choice block
+                i = self._skip_to_end_choices(commands, i)
+                continue
+            
+            # CONDITIONAL (111): if/elif/else - recursive check
+            if code == CMD["CONDITIONAL"]:
+                if self._check_conditional_branches(commands, i):
+                    return True
+                # Skip past this conditional block
+                i = self._skip_conditional_block(commands, i)
+                continue
+            
+            # Other meaningful commands (state changes, jumps, audio, etc.)
+            if code in self._MEANINGFUL_COMMAND_CODES:
+                return True
+            
+            i += 1
+        
+        return False
+    
+    def _check_choice_branches(self, commands: list[dict[str, Any]], start: int) -> bool:
+        """Check if any WHEN_CHOICE branch has meaningful content.
+        
+        Scans forward from SHOW_CHOICES to find WHEN_CHOICE (402) blocks,
+        checking each branch's command list recursively.
+        
+        Args:
+            commands: Full command list.
+            start: Index of the SHOW_CHOICES command.
+            
+        Returns:
+            True if any choice branch has meaningful content.
+        """
+        i = start + 1
+        while i < len(commands):
+            code = commands[i].get("code", 0)
+            
+            # WHEN_CHOICE (402): Found a branch
+            if code == CMD["WHEN_CHOICE"]:
+                # Collect commands until next branch marker
+                branch_commands = []
+                i += 1
+                while i < len(commands):
+                    branch_code = commands[i].get("code", 0)
+                    # Stop at branch markers or end
+                    if branch_code in (CMD["WHEN_CHOICE"], CMD["WHEN_CANCEL"], CMD["END_CHOICES"]):
+                        break
+                    branch_commands.append(commands[i])
+                    i += 1
+                
+                # Recursively check this branch
+                if self._is_meaningful_command_list(branch_commands):
+                    return True
+                continue
+            
+            # WHEN_CANCEL (403): Cancel branch
+            if code == CMD["WHEN_CANCEL"]:
+                # Collect cancel branch commands
+                branch_commands = []
+                i += 1
+                while i < len(commands):
+                    branch_code = commands[i].get("code", 0)
+                    if branch_code == CMD["END_CHOICES"]:
+                        break
+                    branch_commands.append(commands[i])
+                    i += 1
+                
+                if self._is_meaningful_command_list(branch_commands):
+                    return True
+                continue
+            
+            # END_CHOICES (404): Done scanning
+            if code == CMD["END_CHOICES"]:
+                break
+            
+            i += 1
+        
+        return False
+    
+    def _check_conditional_branches(self, commands: list[dict[str, Any]], start: int) -> bool:
+        """Check if any conditional branch has meaningful content.
+        
+        Scans forward from CONDITIONAL to find ELSE (411) and END_CONDITIONAL (412),
+        checking each branch's command list recursively.
+        
+        Args:
+            commands: Full command list.
+            start: Index of the CONDITIONAL command.
+            
+        Returns:
+            True if any conditional branch has meaningful content.
+        """
+        i = start + 1
+        while i < len(commands):
+            code = commands[i].get("code", 0)
+            
+            # ELSE (411): Alternative branch
+            if code == CMD["ELSE"]:
+                # Collect else branch commands
+                branch_commands = []
+                i += 1
+                while i < len(commands):
+                    branch_code = commands[i].get("code", 0)
+                    if branch_code == CMD["END_CONDITIONAL"]:
+                        break
+                    branch_commands.append(commands[i])
+                    i += 1
+                
+                if self._is_meaningful_command_list(branch_commands):
+                    return True
+                continue
+            
+            # END_CONDITIONAL (412): Done scanning
+            if code == CMD["END_CONDITIONAL"]:
+                break
+            
+            # Collect "if true" branch commands (between CONDITIONAL and ELSE/END_CONDITIONAL)
+            branch_commands = []
+            while i < len(commands):
+                branch_code = commands[i].get("code", 0)
+                if branch_code in (CMD["ELSE"], CMD["END_CONDITIONAL"]):
+                    break
+                branch_commands.append(commands[i])
+                i += 1
+            
+            if self._is_meaningful_command_list(branch_commands):
+                return True
+            
+            # i is now at ELSE or END_CONDITIONAL, loop continues to handle it
+        
+        return False
+    
+    def _skip_to_end_choices(self, commands: list[dict[str, Any]], start: int) -> int:
+        """Return index of END_CHOICES after SHOW_CHOICES block.
+        
+        Used to skip past a choice block when we don't need to check branches.
+        
+        Args:
+            commands: Full command list.
+            start: Index of the SHOW_CHOICES command.
+            
+        Returns:
+            Index of the END_CHOICES command (or len(commands) if not found).
+        """
+        i = start + 1
+        while i < len(commands):
+            if commands[i].get("code") == CMD["END_CHOICES"]:
+                return i
+            i += 1
+        return len(commands)
+    
+    def _skip_conditional_block(self, commands: list[dict[str, Any]], start: int) -> int:
+        """Return index after END_CONDITIONAL for the CONDITIONAL at start.
+        
+        Handles nested conditionals correctly by tracking nesting depth.
+        
+        Args:
+            commands: Full command list.
+            start: Index of the CONDITIONAL command.
+            
+        Returns:
+            Index of the END_CONDITIONAL command (or len(commands) if not found).
+        """
+        i = start + 1
+        nesting = 1  # Track nested conditionals
+        while i < len(commands):
+            code = commands[i].get("code", 0)
+            if code == CMD["CONDITIONAL"]:
+                nesting += 1
+            elif code == CMD["END_CONDITIONAL"]:
+                nesting -= 1
+                if nesting == 0:
+                    return i
+            i += 1
+        return len(commands)
+    
+    def _page_has_meaningful_content(self, page: dict[str, Any]) -> bool:
+        """Check if a single page has meaningful transpilable content.
+        
+        A page is meaningful if its command list contains any command
+        that produces Ren'Py output (dialogue, state changes, etc.).
+        
+        Args:
+            page: Event page dict with 'list' key.
+            
+        Returns:
+            True if the page produces Ren'Py output.
+        """
+        command_list = page.get("list", [])
+        return self._is_meaningful_command_list(command_list)
+    
+    def _event_has_meaningful_content(self, event: dict[str, Any]) -> bool:
+        """Check if an event has any meaningful content across all pages.
+        
+        An event is empty if ALL of its pages have no meaningful commands.
+        This is checked BEFORE generation to avoid wasted work.
+        
+        Args:
+            event: RPG Maker event dict with 'pages' key.
+            
+        Returns:
+            True if any page produces Ren'Py output.
+        """
+        pages = event.get("pages", [])
+        for page in pages:
+            if self._page_has_meaningful_content(page):
+                return True
+        return False
+
     @staticmethod
     def _is_empty_event_source(source: str) -> bool:
         """Check whether a generated event source is empty.
@@ -607,6 +891,9 @@ class RenPyGenerator:
         An event source is considered empty when it contains no meaningful
         code lines after stripping the file header, comment lines, the
         ``label`` declaration, and the final ``return``.
+
+        This is a reactive check (post-generation) that serves as a safety
+        net for edge cases missed by proactive filtering.
 
         Args:
             source: Complete .rpy file content for a single event.

@@ -78,10 +78,14 @@ class CommonEventGenerator(RenPyGenerator):
             ``label`` is the safe label string (e.g., ``"event_2_cheats"``).
             Returns None when the event contains no meaningful commands.
         """
+        # ═══ PROACTIVE FILTERING: Check for meaningful content BEFORE generation ═══
+        command_list = event.get("list", [])
+        if not self._is_meaningful_command_list(command_list):
+            return None
+        
         event_id = event["id"]
         event_name = event.get("name", "")
         label = safe_label(event_name, event_id)
-        command_list = event.get("list", [])
 
         # Save generator state
         saved_lines = self.lines
