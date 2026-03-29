@@ -44,18 +44,23 @@ outputs/
   game_flow.rpy                                     # label start: jump map_1_Checkpoint
   maps/
     map_1_Checkpoint/
-      map_1_Checkpoint.rpy                          # label map_1_Checkpoint: call .event_3_intro; return
-      map_1_Checkpoint_switches.rpy                 # init python in map_1_checkpoint:
-      map_1_Checkpoint_events/                      # events subfolder
-        map_1_Checkpoint_event_3_intro.rpy          # label map_1_Checkpoint.event_3_intro: ...
-        map_1_Checkpoint_event_2_ev002.rpy          # label map_1_Checkpoint.event_2_ev002: ...
-        map_1_Checkpoint_event_4_torch.rpy          # label map_1_Checkpoint.event_4_torch: ...
+      map_1_Checkpoint.rpy                              # label map_1_Checkpoint: call .event_3_intro; return
+      map_1_Checkpoint_events/                          # events subfolder
+        map_1_Checkpoint_event_3_intro/                 # event folder
+          map_1_Checkpoint_event_3_intro.rpy            # label map_1_Checkpoint.event_3_intro: ...
+          map_1_Checkpoint_event_3_intro_switches.rpy   # init python in map_1_checkpoint_self_switches:
+        map_1_Checkpoint_event_2_ev002/                 # event folder (no switches)
+          map_1_Checkpoint_event_2_ev002.rpy            # label map_1_Checkpoint.event_2_ev002: ...
+        map_1_Checkpoint_event_4_torch/                 # event folder
+          map_1_Checkpoint_event_4_torch.rpy            # label map_1_Checkpoint.event_4_torch: ...
     map_3_Refugee_Camp/
       map_3_Refugee_Camp.rpy
-      map_3_Refugee_Camp_switches.rpy
       map_3_Refugee_Camp_events/
-        map_3_Refugee_Camp_event_57_auto.rpy
-        map_3_Refugee_Camp_event_1_ev001.rpy
+        map_3_Refugee_Camp_event_57_auto/
+          map_3_Refugee_Camp_event_57_auto.rpy
+          map_3_Refugee_Camp_event_57_auto_switches.rpy
+        map_3_Refugee_Camp_event_1_ev001/
+          map_3_Refugee_Camp_event_1_ev001.rpy
 ```
 
 ### Local Label Convention
@@ -99,7 +104,7 @@ non-return lines. If none found, the event file is not written.
 |---|---|---|
 | Global Switch | `game_switch` | `game_switch.switch_5_paid` |
 | Global Variable | `game_vars` | `game_vars.var_2_defiance` |
-| Self-Switch | `map_{id}_{name}` | `map_3_refugee_camp.switch_40_under_A` |
+| Self-Switch | `map_{id}_{name}_self_switches` | `map_3_refugee_camp_self_switches.switch_40_under_A` |
 | Item | `game_items` | `game_items.item_1` |
 | Gold | `game_economy` | `game_economy.gold` |
 | Quest Log | `game_quest` | `game_quest.quest_log` |

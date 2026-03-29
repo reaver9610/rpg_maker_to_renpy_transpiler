@@ -5,8 +5,8 @@ during the collection phase: global switches, global variables, items, economy (
 and quest log. Each file uses a dedicated Ren'Py named store for clean namespace
 separation.
 
-Additionally, per-map self-switch declaration files are generated, placing self-switches
-in map-specific stores.
+Additionally, per-event and per-map self-switch declaration files are generated,
+placing self-switches in map-specific stores.
 
 Game State in RPG Maker vs Ren'Py:
 RPG Maker MV uses a database-driven approach:
@@ -360,8 +360,8 @@ def generate_map_switches_rpy(
     Creates a .rpy file containing `init python in map_{id}_{name}:` assignments for every
     self-switch that belongs to the specified map.
 
-    Store: map_{id}_{sanitized_name}
-    Reference: map_{id}_{name}.switch_{event_id}_{channel}
+    Store: ``map_{id}_{sanitized_name}_self_switches``
+    Reference: ``map_{id}_{name}_self_switches.switch_{event_id}_{name}_{channel}``
 
     Self-switches are event-local booleans (A/B/C/D channels) that are unique to
     a specific event on a specific map. Unlike global switches, they don't persist
@@ -370,8 +370,8 @@ def generate_map_switches_rpy(
     Args:
         collector: DataCollector instance populated with self-switch data.
             Required attributes:
-            - self_switches: dict mapping map_id to set of (event_id, channel) tuples
-            - get_self_switch_store_name(map_id): returns store name like "map_1_checkpoint"
+            - self_switches: dict mapping map_id to dict of event_id → list of channels
+            - get_self_switch_store_name(map_id): returns store name like "map_1_checkpoint_self_switches"
         map_id: The numeric ID of this map (from filename or MapInfos.json).
         map_name: The human-readable name of this map for header comments.
         interlines: Number of blank lines to insert between each output line.
@@ -395,7 +395,7 @@ def generate_map_switches_rpy(
     """
     # Check if this map has any self-switches
     # If not, return empty string (no file needs to be generated)
-    map_self_switches = collector.self_switches.get(map_id, set())
+    map_self_switches = collector.self_switches.get(map_id, {})
     if not map_self_switches:
         return ""
 
@@ -421,10 +421,92 @@ def generate_map_switches_rpy(
 
     # Iterate over self-switches in sorted order
     # Sorting by (event_id, channel) ensures consistent output
-    for event_id, channel in sorted(map_self_switches):
-        # Build a descriptive variable name using the event's safe label
-        # Format: switch_{event_id}_{event_name}_{channel}
-        # Example: switch_40_under_A (for event 40 "Under", channel A)
+    for event_id, channels in sorted(map_self_switches.items()):
+        for channel in sorted(channels):
+            # Build a descriptive variable name using the event's safe label
+            # Format: switch_{event_id}_{event_name}_{channel}
+            # Example: switch_40_under_A (for event 40 "Under", channel A)
+            switch_name = collector.get_self_switch_name(map_id, event_id, channel)
+            output_lines.append(f"{make_indent(indent_width)}{switch_name} = False")
+
+    # Add a trailing blank line
+    output_lines.append("")
+
+    # Join all lines with newlines and return
+    return join_with_interlines(output_lines, interlines)
+
+
+def generate_event_switches_rpy(
+    collector: DataCollector,
+    map_id: int,
+    event_id: int,
+    map_name: str,
+    event_label: str,
+    interlines: int = 0,
+    indent_width: int = 4,
+) -> str:
+    """Generate a per-event self-switch declaration file.
+
+    Creates a .rpy file containing ``init python in map_{id}_{name}:`` assignments for
+    the self-switch channels (A/B/C/D) that belong to a single event.
+
+    Store: ``map_{id}_{sanitized_name}_self_switches``
+    Reference: ``map_{id}_{name}_self_switches.switch_{event_id}_{name}_{channel}``
+
+    Args:
+        collector: DataCollector instance populated with self-switch data.
+            Required attributes:
+            - self_switches: dict mapping map_id to dict of event_id → list of channels
+            - get_self_switch_store_name(map_id): returns store name like "map_1_checkpoint_self_switches"
+            - get_self_switch_name(map_id, event_id, channel): returns variable name like "switch_40_under_A"
+            - get_event_switches(map_id, event_id): returns sorted [(event_id, channel), ...] list
+        map_id: The numeric ID of this map.
+        event_id: The numeric ID of this event.
+        map_name: The human-readable name of this map for header comments.
+        event_label: The safe label of this event (e.g., "event_40_under").
+        interlines: Number of blank lines to insert between each output line.
+            Default 0 means no extra spacing.
+        indent_width: Number of spaces for one indentation level.
+
+    Returns:
+        Complete .rpy source string for the per-event self-switch file.
+        Returns empty string if no self-switches exist for this event.
+
+    Example:
+        >>> collector = DataCollector()
+        >>> # ... populate collector with self_switches data ...
+        >>> source = generate_event_switches_rpy(collector, 3, 54, "Refugee Camp", "event_54_striptease")
+        >>> if source:
+        ...     with open("event_54_striptease_switches.rpy", "w") as f:
+        ...         f.write(source)
+    """
+    # Get the self-switch channels used by this specific event
+    # Returns sorted list of (event_id, channel) tuples
+    event_switches = collector.get_event_switches(map_id, event_id)
+    if not event_switches:
+        return ""
+
+    # Initialize the output lines list
+    output_lines: list[str] = []
+
+    # ── File Header ──
+    # Emit a decorative header with event and map info for debugging
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append(f"# SELF-SWITCHES — Event {event_id}: {event_label}")
+    output_lines.append(f"# Map {map_id}: {map_name}")
+    output_lines.append("# Auto-generated from RPG Maker MV")
+    output_lines.append("# ═══════════════════════════════════════════════════")
+    output_lines.append("")
+
+    # Get the Ren'Py named store name for this map
+    store_name = collector.get_self_switch_store_name(map_id)
+
+    # ── Self-Switches ──
+    output_lines.append(f"init python in {store_name}:")
+    output_lines.append("")
+
+    # Emit one declaration per channel
+    for _, channel in event_switches:
         switch_name = collector.get_self_switch_name(map_id, event_id, channel)
         output_lines.append(f"{make_indent(indent_width)}{switch_name} = False")
 

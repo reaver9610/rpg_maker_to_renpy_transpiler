@@ -548,3 +548,31 @@ def make_indent(indent_width: int, level: int = 1) -> str:
         '      '
     """
     return " " * (indent_width * level)
+
+
+def apply_case(text: str, mode: str) -> str:
+    """Apply case transformation to text based on the specified mode.
+
+    Args:
+        text: The text to transform.
+        mode: The case mode - "lower", "title", or "upper".
+
+    Returns:
+        The transformed text.
+
+    Example:
+        >>> apply_case("Claire", "lower")
+        'claire'
+        >>> apply_case("claire", "title")
+        'Claire'
+        >>> apply_case("claire", "upper")
+        'CLAIRE'
+    """
+    if mode == "lower":
+        return text.lower()
+    elif mode == "title":
+        return text.title()
+    elif mode == "upper":
+        return text.upper()
+    else:
+        return text

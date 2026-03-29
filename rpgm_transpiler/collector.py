@@ -87,7 +87,7 @@ class DataCollector:
         All global variable IDs referenced anywhere in the game
         Example: {1, 3, 7}
 
-    - self_switches: dict[map_id → set[tuple[event_id, channel]]]
+    - self_switches: dict[map_id → dict[event_id → list[channel]]]
         All self-switch references, grouped by map
         Example: {1: {(1, "A"), (1, "B")}, 3: {(5, "A")}}
 
@@ -123,7 +123,7 @@ class DataCollector:
             character_face_ids (dict): Empty dict to store face_asset → set[face_id] mappings
             switch_ids (set): Empty set for global switch IDs
             variable_ids (set): Empty set for global variable IDs
-            self_switches (dict): Empty dict for map_id → set of (event_id, channel) tuples
+            self_switches (dict): Empty dict for map_id → dict of event_id → list of channel letters
             event_names (dict): Empty dict for map_id → {event_id → safe_label} mappings
             item_ids (set): Empty set for item IDs
             map_ids (set): Empty set for map IDs
@@ -148,9 +148,9 @@ class DataCollector:
         self.variable_ids: set[int] = set()
         
         # Self-switches: event-local boolean flags (A/B/C/D channels)
-        # Grouped by map_id: {map_id → set of (event_id, channel_letter)}
-        # Used by generate_map_switches_rpy() to create per-map store declarations
-        self.self_switches: dict[int, set[tuple[int, str]]] = {}
+        # Grouped by map_id, then by event_id: {map_id → {event_id → [channel_letters]}}
+        # Used by generate_event_switches_rpy() to create per-event store declarations
+        self.self_switches: dict[int, dict[int, list[str]]] = {}
         
         # Event names: per-map lookup of event_id → safe_label name
         # Used by generate_map_switches_rpy() for descriptive self-switch naming
@@ -343,10 +343,10 @@ class DataCollector:
         """Get the Ren'Py named store name for a map's self-switches.
 
         Returns a store name combining the map ID with its sanitized display name.
-        This store is used in per-map self-switch declaration files and in
+        This store is used in per-event self-switch declaration files and in
         self-switch references throughout the generated code.
 
-        Format: map_{id}_{sanitized_name}
+        Format: map_{id}_{sanitized_name}_self_switches
 
         Args:
             map_id: The numeric map ID (1-based).
@@ -357,17 +357,17 @@ class DataCollector:
         Example:
             >>> # With map_names[1] = "Checkpoint"
             >>> collector.get_self_switch_store_name(1)
-            'map_1_checkpoint'
+            'map_1_checkpoint_self_switches'
             >>> # With map_names[1] = "Outer Valos"
             >>> collector.get_self_switch_store_name(1)
-            'map_1_outer_valos'
+            'map_1_outer_valos_self_switches'
             >>> # Unknown map
             >>> collector.get_self_switch_store_name(999)
-            'map_999'
+            'map_999_self_switches'
         """
         raw_name = self.map_names.get(map_id, f"map_{map_id}")
         sanitized = self._sanitize_name_for_variable(raw_name)
-        return f"map_{map_id}_{sanitized}"
+        return f"map_{map_id}_{sanitized}_self_switches"
 
     def get_self_switch_name(self, map_id: int, event_id: int, channel: str) -> str:
         """Get a descriptive self-switch variable name.
@@ -405,6 +405,32 @@ class DataCollector:
             name_part = label.replace("event_", "", 1)
             return f"switch_{name_part}_{channel}"
         return f"switch_{event_id}_{channel}"
+
+    def get_event_switches(self, map_id: int, event_id: int) -> list[tuple[int, str]]:
+        """Get all self-switch channels used by a specific event, sorted.
+
+        Returns the list of (event_id, channel) tuples for self-switches that belong
+        to the given event on the given map.  Channels are sorted alphabetically
+        (A, B, C, D) for consistent output.
+
+        Args:
+            map_id: The numeric map ID.
+            event_id: The numeric event ID.
+
+        Returns:
+            Sorted list of (event_id, channel) tuples.
+            Returns empty list if the event has no self-switches.
+
+        Example:
+            >>> collector.self_switches = {3: {54: ["D", "B", "C", "A"]}}
+            >>> collector.get_event_switches(3, 54)
+            [(54, 'A'), (54, 'B'), (54, 'C'), (54, 'D')]
+            >>> collector.get_event_switches(3, 999)
+            []
+        """
+        map_switches = self.self_switches.get(map_id, {})
+        channels = map_switches.get(event_id, [])
+        return sorted([(event_id, ch) for ch in channels], key=lambda t: t[1])
 
     def _get_switch_raw_name(self, switch_id: int) -> str | None:
         """Get the raw name of a switch from System.json.
@@ -589,10 +615,12 @@ class DataCollector:
         if conditions.get("selfSwitchValid"):
             # Get the channel letter, defaulting to "A"
             channel = conditions.get("selfSwitchCh", "A")
-            # Add the (event_id, channel) tuple to our map-specific set
-            # This ensures generate_map_switches_rpy() initializes:
-            # map_{id}_{name}.switch_{event_id}_{channel} = False
-            self.self_switches.setdefault(map_id, set()).add((event_id, channel))
+            # Add the channel to this event's list, grouped by map
+            # This ensures generate_event_switches_rpy() initializes:
+            # map_{id}_{name}.switch_{event_id}_{name}_{channel} = False
+            event_switches = self.self_switches.setdefault(map_id, {}).setdefault(event_id, [])
+            if channel not in event_switches:
+                event_switches.append(channel)
 
         # Condition type 5: Player must possess at least one of a specific item
         # The page appears when the player has 1+ of itemId
@@ -706,9 +734,10 @@ class DataCollector:
                 # Get the channel letter (A, B, C, or D)
                 channel = parameters[0]
                 
-                # Add the self-switch key to our map-specific set
-                # Key format: (event_id, channel), grouped by map_id
-                self.self_switches.setdefault(map_id, set()).add((event_id, channel))
+                # Add the channel to this event's list, grouped by map
+                event_switches = self.self_switches.setdefault(map_id, {}).setdefault(event_id, [])
+                if channel not in event_switches:
+                    event_switches.append(channel)
 
             # ── CONDITIONAL (code 111): If/else branch ──
             # Parameters: [condition_type, ...type_specific_params]
@@ -732,8 +761,11 @@ class DataCollector:
                 # Condition type 2: Self-switch check
                 # Parameters: [2, channel, expected_value]
                 elif condition_type == 2:
-                    # Add the self-switch key being checked, grouped by map
-                    self.self_switches.setdefault(map_id, set()).add((event_id, parameters[1]))
+                    # Add the channel to this event's list, grouped by map
+                    event_switches = self.self_switches.setdefault(map_id, {}).setdefault(event_id, [])
+                    channel = parameters[1]
+                    if channel not in event_switches:
+                        event_switches.append(channel)
 
             # ── TRANSFER_PLAYER (code 201): Jump to another map ──
             # Parameters: [transfer_type, map_id, x, y, direction, fade]

@@ -218,7 +218,7 @@ class RenPyGenerator:
         self.map_label_name = safe_map_label(map_id, self.map_name)
 
         # Store the Ren'Py named store name for this map's self-switches
-        # Used in self-switch references: $ map_{id}_{name}.switch_{eid}_{ch} = True
+        # Used in self-switch references: $ map_{id}_{name}_self_switches.switch_{eid}_{ch} = True
         self.map_store_name = collector.get_self_switch_store_name(map_id)
 
         # Build a lookup dict of event_id → safe_label for descriptive self-switch names
@@ -1020,7 +1020,7 @@ class RenPyGenerator:
                         self._emit(f"$ {variable_name} {operator_symbol} {operand_value}")
 
             # ── CONTROL_SELF_SWITCH (code 123): Toggle event-local switch ──
-            # Emits: $ map_{id}_{name}.switch_{id}_{name}_{channel} = True/False
+            # Emits: $ map_{id}_{name}_self_switches.switch_{id}_{name}_{channel} = True/False
             elif command_code == CMD["CONTROL_SELF_SWITCH"]:
                 # Flush any pending text
                 self._flush_text()

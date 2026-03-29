@@ -84,6 +84,7 @@ from .switches import (
     generate_global_economy_rpy,
     generate_global_quests_rpy,
     generate_map_switches_rpy,
+    generate_event_switches_rpy,
 )
 from .game_flow import generate_game_flow_rpy
 from .side_images import generate_side_images_rpy
@@ -102,6 +103,7 @@ __all__ = [
     "generate_global_economy_rpy",
     "generate_global_quests_rpy",
     "generate_map_switches_rpy",
+    "generate_event_switches_rpy",
     "generate_game_flow_rpy",
 ]
 
@@ -401,7 +403,7 @@ def transpile_to_renpy(
 
     # ── Log collection summary ──
     # Provide feedback about what was discovered
-    total_self_switches = sum(len(v) for v in collector.self_switches.values())
+    total_self_switches = sum(len(channels) for ev_switches in collector.self_switches.values() for channels in ev_switches.values())
     print(f"[INFO] Collected from {len(all_map_data)} maps:")
     print(f"    {len(collector.characters)} characters")
     print(f"    {len(collector.switch_ids)} switches")
@@ -555,35 +557,50 @@ def transpile_to_renpy(
         _write_file(f"{base_path}.rpy", result.map_label)
 
         # ── Write event files into events subfolder ──
-        # Only create the subfolder if there are events to write
+        # Each event gets its own subfolder with the event script and switch declarations
         if result.autorun or result.events:
             events_dir = os.path.join(full_folder_path, f"{result.map_label_name}_events")
             os.makedirs(events_dir, exist_ok=True)
 
-            # Write autorun files: map_{id}_{Name}_{event_label}.rpy
-            # filename_suffix comes from safe_label() and is descriptive
-            # e.g., "event_57_auto" → map_3_Refugee_Camp_event_57_auto.rpy
+            map_name_raw = map_name_for_header or map_data.get("displayName", f"Map{map_id}")
+
+            # Write autorun event files
+            # Each autorun gets: subfolder/event_script.rpy + subfolder/event_switches.rpy
             for event_id, (source, filename_suffix) in result.autorun.items():
-                autorun_path = os.path.join(events_dir, f"{result.map_label_name}_{filename_suffix}.rpy")
-                _write_file(autorun_path, source)
+                event_subdir = os.path.join(events_dir, f"{result.map_label_name}_{filename_suffix}")
+                os.makedirs(event_subdir, exist_ok=True)
 
-            # Write event files: map_{id}_{Name}_{event_label}.rpy
-            # filename_suffix comes from safe_label() and is descriptive
-            # e.g., "event_40_under" → map_3_Refugee_Camp_event_40_under.rpy
+                # Write event script: map_{id}_{Name}_{event_label}.rpy
+                event_file = os.path.join(event_subdir, f"{result.map_label_name}_{filename_suffix}.rpy")
+                _write_file(event_file, source)
+
+                # Write per-event self-switch declarations (skipped if no switches)
+                event_switches_src = generate_event_switches_rpy(
+                    collector, map_id, event_id, map_name_raw, filename_suffix,
+                    interlines=map_interlines, indent_width=indent_width,
+                )
+                if event_switches_src:
+                    switches_file = os.path.join(event_subdir, f"{result.map_label_name}_{filename_suffix}_switches.rpy")
+                    _write_file(switches_file, event_switches_src)
+
+            # Write regular event files
+            # Each event gets: subfolder/event_script.rpy + subfolder/event_switches.rpy
             for event_id, (source, filename_suffix) in result.events.items():
-                event_path = os.path.join(events_dir, f"{result.map_label_name}_{filename_suffix}.rpy")
-                _write_file(event_path, source)
+                event_subdir = os.path.join(events_dir, f"{result.map_label_name}_{filename_suffix}")
+                os.makedirs(event_subdir, exist_ok=True)
 
-        # ── Write per-map self-switch file ──
-        map_name_raw = map_name_for_header or map_data.get("displayName", f"Map{map_id}")
-        map_switches_src = generate_map_switches_rpy(
-            collector, map_id, map_name_raw,
-            interlines=map_interlines,
-            indent_width=indent_width,
-        )
-        if map_switches_src:
-            switches_path = f"{base_path}_switches.rpy"
-            _write_file(switches_path, map_switches_src)
+                # Write event script: map_{id}_{Name}_{event_label}.rpy
+                event_file = os.path.join(event_subdir, f"{result.map_label_name}_{filename_suffix}.rpy")
+                _write_file(event_file, source)
+
+                # Write per-event self-switch declarations (skipped if no switches)
+                event_switches_src = generate_event_switches_rpy(
+                    collector, map_id, event_id, map_name_raw, filename_suffix,
+                    interlines=map_interlines, indent_width=indent_width,
+                )
+                if event_switches_src:
+                    switches_file = os.path.join(event_subdir, f"{result.map_label_name}_{filename_suffix}_switches.rpy")
+                    _write_file(switches_file, event_switches_src)
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 6: Generate game_flow.rpy (navigation labels)
