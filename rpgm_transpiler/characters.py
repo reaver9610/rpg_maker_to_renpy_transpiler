@@ -37,7 +37,7 @@ Output File Structure:
 """
 
 from .collector import DataCollector
-from .helpers import safe_var, side_image_tag, join_with_interlines, make_indent
+from .helpers import safe_var, side_image_tag, join_with_interlines, make_indent, apply_case
 
 
 def _get_character_color(face_name: str) -> str:
@@ -111,7 +111,12 @@ def _get_character_color(face_name: str) -> str:
         return "#ffffff"
 
 
-def generate_characters_rpy(collector: DataCollector, interlines: int = 0, indent_width: int = 4) -> str:
+def generate_characters_rpy(
+    collector: DataCollector,
+    interlines: int = 0,
+    indent_width: int = 4,
+    case_mode: dict[str, str] | None = None,
+) -> str:
     """Generate characters.rpy with Ren'Py Character definitions.
 
     Creates a .rpy file containing `define` statements for every character
@@ -135,6 +140,10 @@ def generate_characters_rpy(collector: DataCollector, interlines: int = 0, inden
         - character_face_ids: dict mapping face_name → set of face IDs
         interlines: Number of blank lines to insert between each output line.
         Default 0 means no extra spacing.
+        indent_width: Number of spaces per indentation level. Default is 4.
+        case_mode: Dictionary specifying case for variable name, display name, and image tag.
+        Keys: "var", "display", "image". Values: "lower", "title", "upper".
+        If None, defaults to {"var": "title", "display": "title", "image": "lower"}.
 
         Returns:
         Complete .rpy source string for characters.rpy.
@@ -163,6 +172,9 @@ def generate_characters_rpy(collector: DataCollector, interlines: int = 0, inden
         The init python block with 'pass' is included as a placeholder for
         future Python code. Ren'Py requires at least one statement in a block.
     """
+    # Set default case mode if not provided
+    if case_mode is None:
+        case_mode = {"var": "title", "display": "title", "image": "lower"}
     # Initialize the output lines list
     output_lines: list[str] = []
 
@@ -186,7 +198,13 @@ def generate_characters_rpy(collector: DataCollector, interlines: int = 0, inden
     for face_name, display_name in sorted(collector.characters.items()):
         # Convert the display name to a safe Python variable name
         # Example: "Sailor Skipper" → "Sailor_Skipper"
-        safe_variable_name = safe_var(display_name)
+        raw_variable_name = safe_var(display_name)
+        
+        # Apply case transformation to variable name
+        safe_variable_name = apply_case(raw_variable_name, case_mode.get("var", "title"))
+        
+        # Apply case transformation to display name
+        cased_display_name = apply_case(display_name, case_mode.get("display", "title"))
         
         # Get the color for this character
         # Color is determined by face asset naming patterns
@@ -198,14 +216,15 @@ def generate_characters_rpy(collector: DataCollector, interlines: int = 0, inden
         # Emit the Character definition
         if has_face_ids:
             # Character has face images: include image tag for side display
-            image_tag = side_image_tag(face_name)
+            raw_image_tag = side_image_tag(face_name)
+            image_tag = apply_case(raw_image_tag, case_mode.get("image", "lower"))
             output_lines.append(
-                f'define {safe_variable_name} = Character("{display_name}", color="{character_color}", image="{image_tag}")'
+                f'define {safe_variable_name} = Character("{cased_display_name}", color="{character_color}", image="{image_tag}")'
             )
         else:
             # Character has no face images: omit image parameter
             output_lines.append(
-                f'define {safe_variable_name} = Character("{display_name}", color="{character_color}")'
+                f'define {safe_variable_name} = Character("{cased_display_name}", color="{character_color}")'
             )
 
     # Add trailing newline

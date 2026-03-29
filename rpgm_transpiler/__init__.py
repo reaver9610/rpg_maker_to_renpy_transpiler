@@ -115,6 +115,7 @@ def transpile_to_renpy(
     interlines: int = 0,
     interlines_targets: set[str] | None = None,
     indent_width: int = 4,
+    case_mode: dict[str, str] | None = None,
 ) -> None:
     """Transpile one or more RPG Maker MV JSON maps to Ren'Py .rpy scripts.
 
@@ -166,6 +167,9 @@ def transpile_to_renpy(
         If None and interlines > 0, defaults to {"maps"}.
         If interlines == 0, this parameter is ignored.
         indent_width: Number of spaces per indentation level. Default is 4.
+        case_mode: Dictionary specifying case for character names.
+        Keys: "var", "display", "image". Values: "lower", "title", "upper".
+        If None, defaults to {"var": "title", "display": "title", "image": "lower"}.
 
     Example:
         >>> transpile_to_renpy(["inputs/Map001.json"], "renpy_output/")
@@ -224,6 +228,11 @@ def transpile_to_renpy(
     # Default: apply interlines to maps only
     if interlines_targets is None:
         interlines_targets = {"maps"} if interlines > 0 else set()
+    
+    # Set default case_mode if not specified
+    # Default: title case for variable names, title case for display names, lower for image tags
+    if case_mode is None:
+        case_mode = {"var": "title", "display": "title", "image": "lower"}
     
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 0b: Load System.json if available
@@ -417,7 +426,7 @@ def transpile_to_renpy(
     
     # Generate the character definitions
     character_interlines = interlines if "characters" in interlines_targets else 0
-    character_definitions = generate_characters_rpy(collector, interlines=character_interlines, indent_width=indent_width)
+    character_definitions = generate_characters_rpy(collector, interlines=character_interlines, indent_width=indent_width, case_mode=case_mode)
     
     # Build the output file path
     characters_path = os.path.join(output_dir, "characters.rpy")
@@ -491,7 +500,7 @@ def transpile_to_renpy(
     
     # Generate the side image declarations
     side_images_interlines = interlines if "side_images" in interlines_targets else 0
-    side_images_definitions = generate_side_images_rpy(collector, interlines=side_images_interlines, indent_width=indent_width)
+    side_images_definitions = generate_side_images_rpy(collector, interlines=side_images_interlines, indent_width=indent_width, case_mode=case_mode)
     
     # Build the output file path
     side_images_path = os.path.join(output_dir, "side_images.rpy")

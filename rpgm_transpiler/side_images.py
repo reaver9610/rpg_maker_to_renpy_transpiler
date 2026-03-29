@@ -40,10 +40,15 @@ Output File Structure:
 """
 
 from .collector import DataCollector
-from .helpers import side_image_tag, join_with_interlines, make_indent
+from .helpers import side_image_tag, join_with_interlines, make_indent, apply_case
 
 
-def generate_side_images_rpy(collector: DataCollector, interlines: int = 0, indent_width: int = 4) -> str:
+def generate_side_images_rpy(
+    collector: DataCollector,
+    interlines: int = 0,
+    indent_width: int = 4,
+    case_mode: dict[str, str] | None = None,
+) -> str:
     """Generate side_images.rpy with Ren'Py side image declarations.
 
     Creates a .rpy file containing `image side` statements for every
@@ -83,6 +88,10 @@ def generate_side_images_rpy(collector: DataCollector, interlines: int = 0, inde
         - character_face_ids: dict mapping face_name → set of face IDs
         interlines: Number of blank lines to insert between each output line.
         Default 0 means no extra spacing.
+        indent_width: Number of spaces per indentation level. Default is 4.
+        case_mode: Dictionary specifying case for image tags.
+        Keys: "image". Values: "lower", "title", "upper".
+        If None, defaults to {"image": "lower"}.
 
         Returns:
         Complete .rpy source string for side_images.rpy.
@@ -107,6 +116,9 @@ def generate_side_images_rpy(collector: DataCollector, interlines: int = 0, inde
         helpers.side_image_tag: Converts face names to image tags.
         characters.generate_characters_rpy: Uses the same tags for Character definitions.
     """
+    # Set default case mode if not provided
+    if case_mode is None:
+        case_mode = {"image": "lower"}
     # Initialize the output lines list
     output_lines: list[str] = []
 
@@ -137,7 +149,10 @@ def generate_side_images_rpy(collector: DataCollector, interlines: int = 0, inde
         
         # Convert the face name to a Ren'Py image tag
         # Example: "$Claire" → "claire"
-        tag = side_image_tag(face_name)
+        raw_tag = side_image_tag(face_name)
+        
+        # Apply case transformation to image tag
+        tag = apply_case(raw_tag, case_mode.get("image", "lower"))
         
         # Create a safe filename from the face name
         # Strip $ and ! prefixes, convert to lowercase

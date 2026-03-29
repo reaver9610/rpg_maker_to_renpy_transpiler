@@ -83,6 +83,23 @@ class FormatAction(argparse.Action):
         setattr(namespace, self.dest, True)
 
 
+class CaseAction(argparse.Action):
+    """Custom action to handle -c with sub-flags (--lower, --title, --upper)."""
+
+    def __init__(self, option_strings: list[str], dest: str, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, **kwargs)
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[Any] | None,
+        option_string: str | None = None,
+    ):
+        """Mark that case mode is specified; actual parsing happens in custom logic."""
+        setattr(namespace, self.dest, True)
+
+
 def parse_args() -> argparse.Namespace:
     """Parse and return CLI arguments for the transpiler.
 
@@ -153,6 +170,83 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=4,
         help="Number of spaces per indentation level (default: 4)"
+    )
+
+    # Case flag - parsed manually for --lower/--title/--upper and their variants
+    argument_parser.add_argument(
+        "-c", "--case",
+        action=CaseAction,
+        dest="case_specified",
+        help="Character name casing options (--lower, --title, --upper)"
+    )
+
+    # Case sub-flags for variable name
+    argument_parser.add_argument(
+        "--lower",
+        action="store_true",
+        dest="case_lower",
+        default=False,
+        help="Use lowercase for variable names (e.g., claire)"
+    )
+    argument_parser.add_argument(
+        "--title",
+        action="store_true",
+        dest="case_title",
+        default=False,
+        help="Use title case for variable names (e.g., Claire) [default]"
+    )
+    argument_parser.add_argument(
+        "--upper",
+        action="store_true",
+        dest="case_upper",
+        default=False,
+        help="Use uppercase for variable names (e.g., CLAIRE)"
+    )
+
+    # Case sub-flags for display name
+    argument_parser.add_argument(
+        "--lower-display",
+        action="store_true",
+        dest="case_lower_display",
+        default=False,
+        help="Use lowercase for display names"
+    )
+    argument_parser.add_argument(
+        "--title-display",
+        action="store_true",
+        dest="case_title_display",
+        default=False,
+        help="Use title case for display names [default]"
+    )
+    argument_parser.add_argument(
+        "--upper-display",
+        action="store_true",
+        dest="case_upper_display",
+        default=False,
+        help="Use uppercase for display names"
+    )
+
+    # Case sub-flags for image tag
+    argument_parser.add_argument(
+        "--lower-image",
+        action="store_true",
+        dest="case_lower_image",
+        default=False,
+        help="Use lowercase for image tags [default]"
+    )
+    argument_parser.add_argument(
+        "--title-image",
+        action="store_true",
+        dest="case_title_image",
+        default=False,
+        help="Use title case for image tags"
+    )
+    argument_parser.add_argument(
+        "--upper-image",
+        action="store_true",
+        dest="case_upper_image",
+        default=False,
+        help="Use uppercase for image tags"
     )
 
     # Interlines option (number of blank lines between each output line)
@@ -342,6 +436,38 @@ def parse_args() -> argparse.Namespace:
     
     args.interlines_targets = interlines_targets
 
+    # Build case_mode dictionary based on flags
+    # Determine variable name case
+    var_case = "title"  # default
+    if args.case_lower:
+        var_case = "lower"
+    elif args.case_upper:
+        var_case = "upper"
+    # args.case_title is default, no need to check
+
+    # Determine display name case
+    display_case = "title"  # default
+    if args.case_lower_display:
+        display_case = "lower"
+    elif args.case_upper_display:
+        display_case = "upper"
+    # args.case_title_display is default, no need to check
+
+    # Determine image tag case
+    image_case = "lower"  # default
+    if args.case_title_image:
+        image_case = "title"
+    elif args.case_upper_image:
+        image_case = "upper"
+    # args.case_lower_image is default, no need to check
+
+    # Build the case_mode dict
+    args.case_mode = {
+        "var": var_case,
+        "display": display_case,
+        "image": image_case,
+    }
+
     return args
 
 
@@ -428,6 +554,7 @@ def main() -> None:
         interlines=cli_args.interlines,
         interlines_targets=cli_args.interlines_targets,
         indent_width=cli_args.indent_width,
+        case_mode=cli_args.case_mode,
     )
 
 
