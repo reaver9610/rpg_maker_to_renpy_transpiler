@@ -19,6 +19,7 @@ A Python transpiler that converts RPG Maker MV JSON map files into Ren'Py `.rpy`
 - ✅ Gold and item management
 - ✅ Wait commands and sound effects
 - ✅ Plugin command handling
+- ✅ Picture commands (Show Picture, Erase Picture, Move Picture, Rotate Picture, Tint Picture)
 
 ### Output Organization
 
@@ -188,7 +189,42 @@ rpgm-transpile -i --file inputs/Map001.json -n 1 --all
 | `--global-quests` | `global_quests.rpy` |
 | `--side-images` | `side_images.rpy` |
 | `--game-flow` | `game_flow.rpy` |
+| `--common-events` | Common event files |
+| `--audio` | `audio.rpy` |
+| `--pictures` | `pictures.rpy` |
 | `--all` | All output files |
+
+### Picture Commands
+
+RPG Maker MV picture commands are transpiled to Ren'Py `show`/`hide` statements:
+
+```renpy
+# pictures.rpy (auto-generated)
+init python:
+    renpy.add_layer("pictures", above="master", below="screens")
+
+transform picture_position(x=0, y=0, zoom_x=1.0, zoom_y=1.0, alpha=1.0):
+    xpos x
+    ypos y
+    zoom zoom_x
+    yzoom zoom_y
+    alpha alpha
+
+image bg picture_Poster_Recruitment = "img/pictures/Poster_Recruitment.png"
+
+# In event files:
+show bg picture_Poster_Recruitment as picture_3 at picture_position(0, 0, 1.0, 1.0, 1.0)
+...
+hide picture_3 onlayer pictures
+```
+
+| RPG Maker Command | Code | Ren'Py Output |
+|-------------------|------|---------------|
+| Show Picture | 231 | `show bg picture_X as picture_N at picture_position(...)` |
+| Move Picture | 232 | `show picture_N at picture_position(...)` + comment |
+| Rotate Picture | 233 | Comment only (no Ren'Py equivalent) |
+| Tint Picture | 234 | Comment only (no Ren'Py equivalent) |
+| Erase Picture | 235 | `hide picture_N onlayer pictures` |
 
 ## Output Structure
 
@@ -201,10 +237,14 @@ outputs/
 ├── global_economy.rpy          # Gold/economy store
 ├── global_quests.rpy           # Quest log store
 ├── side_images.rpy             # Side image declarations
+├── audio.rpy                   # Audio asset definitions
+├── pictures.rpy                # Picture layer, transforms, image definitions
 ├── game_flow.rpy               # Game entry point
 ├── common_events/              # Common events (if any)
 │   └── event_1_quests/
 │       └── event_1_quests.rpy
+├── img/                        # Image directory (user must copy files)
+│   └── pictures/               # Picture assets from RPG Maker
 └── maps/                       # Map files (hierarchical)
     └── map_206_Prologue/
         └── map_46_Home_Refugee_Camp/
@@ -230,6 +270,8 @@ outputs/
 | `global_economy.rpy` | `init python in game_economy:` block for gold |
 | `global_quests.rpy` | `init python in game_quest:` block for quest log |
 | `side_images.rpy` | `image side {char} {face_id}` declarations |
+| `audio.rpy` | `define audio.*` statements for audio assets |
+| `pictures.rpy` | Custom layer, `transform picture_position`, `image bg picture_*` definitions |
 | `game_flow.rpy` | `label start:` entry point with map jumps |
 
 ### Store Reference Patterns
@@ -242,6 +284,8 @@ outputs/
 | Item | `game_items` | `game_items.item_1` |
 | Gold | `game_economy` | `game_economy.gold` |
 | Quest Log | `game_quest` | `game_quest.quest_log` |
+| Picture Image | — | `image bg picture_Poster = "img/pictures/Poster.png"` |
+| Picture Slot | — | `show bg picture_X as picture_N` / `hide picture_N onlayer pictures` |
 
 ## How It Works
 
@@ -354,7 +398,7 @@ A: The output uses both numeric IDs (`switch_5`) and descriptive names (`switch_
 - [ ] Variable interpolation in dialogue (`\V[N]` → `[var_N]`)
 - [ ] Actor name placeholders (`\N[N]` → `[char_N]`)
 - [ ] Icon support in dialogue (`\I[N]`)
-- [ ] Picture command handling
+- [x] Picture command handling (Show Picture, Erase Picture)
 - [ ] Screen tint/fade effects
 - [ ] Parallax background support
 - [ ] Battle event conversion
@@ -366,6 +410,49 @@ A: The output uses both numeric IDs (`switch_5`) and descriptive names (`switch_
 - [ ] RPG Maker MZ compatibility testing
 - [ ] Plugin command handlers for popular RPG Maker plugins
 - [ ] GUI wrapper for non-technical users
+
+## Testing
+
+Test scripts are organized by CLI option category in `test_scripts/`:
+
+```bash
+# Input options
+./test_scripts/input/test_single_file.sh
+./test_scripts/input/test_multiple_files.sh
+./test_scripts/input/test_directory.sh
+./test_scripts/input/test_regex.sh
+
+# Interlines options
+./test_scripts/interlines/test_interlines_default.sh
+./test_scripts/interlines/test_interlines_targets.sh
+./test_scripts/interlines/test_interlines_all.sh
+./test_scripts/interlines/test_interlines_pictures.sh
+./test_scripts/interlines/test_interlines_double_spacing.sh
+
+# Format options
+./test_scripts/format/test_multiline_format.sh
+
+# Output options
+./test_scripts/output/test_output_dir.sh
+
+# Indent options
+./test_scripts/indent/test_indent_width_default.sh
+./test_scripts/indent/test_indent_width_custom.sh
+
+# Case options
+./test_scripts/case/test_case_default.sh
+./test_scripts/case/test_case_lower.sh
+./test_scripts/case/test_case_upper.sh
+./test_scripts/case/test_case_full_lowercase.sh
+
+# Combined options
+./test_scripts/combined/test_multiline_output.sh
+./test_scripts/combined/test_indent_and_case.sh
+
+# Test with installed rpgm-transpile (global mode)
+./test_scripts/input/test_single_file.sh --global
+./test_scripts/interlines/test_interlines_pictures.sh --global
+```
 
 ## Contributing
 

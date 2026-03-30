@@ -41,6 +41,8 @@ outputs/
   global_economy.rpy                                # init python in game_economy:
   global_quests.rpy                                 # init python in game_quest:
   side_images.rpy                                   # image side claire 0 = ...
+  audio.rpy                                         # define audio.bgm_X = "audio/bgm/X.ogg"
+  pictures.rpy                                      # image bg picture_X = "img/pictures/X.png"
   game_flow.rpy                                     # label start: jump map_1_Checkpoint
   maps/
     map_1_Checkpoint/
@@ -108,6 +110,8 @@ non-return lines. If none found, the event file is not written.
 | Item | `game_items` | `game_items.item_1` |
 | Gold | `game_economy` | `game_economy.gold` |
 | Quest Log | `game_quest` | `game_quest.quest_log` |
+| Picture Image | — | `image bg picture_Poster = "img/pictures/Poster.png"` |
+| Picture Slot | — | `show bg picture_X as picture_N` / `hide picture_N onlayer pictures` |
 | Map Label | — | `label map_3_Refugee_Camp:` |
 | Event Local Label | — | `label map_3_Refugee_Camp.event_11:` |
 
@@ -178,6 +182,9 @@ rpgm-transpile -i --file inputs/Map001.json -f --multiline
   - `--global-quests` - Apply interlines to global_quests.rpy
   - `--side-images` - Apply interlines to side_images.rpy
   - `--game-flow` - Apply interlines to game_flow.rpy
+  - `--common-events` - Apply interlines to common event files
+  - `--audio` - Apply interlines to audio.rpy
+  - `--pictures` - Apply interlines to pictures.rpy
   - `--all` - Apply interlines to all output files
 - `-f, --format` - Format options (use with one of the following sub-options):
   - `--single` - Emit single-line dialogue (default)
@@ -206,13 +213,15 @@ Test scripts are in `test_scripts/` directory, organized by category:
 # Input options (test_scripts/input/)
 ./test_scripts/input/test_single_file.sh
 ./test_scripts/input/test_multiple_files.sh
-./test_scripts/input/test_folder.sh
+./test_scripts/input/test_directory.sh
 ./test_scripts/input/test_regex.sh
 
 # Interlines options (test_scripts/interlines/)
 ./test_scripts/interlines/test_interlines_default.sh
 ./test_scripts/interlines/test_interlines_targets.sh
 ./test_scripts/interlines/test_interlines_all.sh
+./test_scripts/interlines/test_interlines_pictures.sh
+./test_scripts/interlines/test_interlines_double_spacing.sh
 
 # Format options (test_scripts/format/)
 ./test_scripts/format/test_multiline_format.sh
@@ -236,22 +245,7 @@ Test scripts are in `test_scripts/` directory, organized by category:
 
 # Global mode (uses installed rpgm-transpile)
 ./test_scripts/input/test_single_file.sh --global
-./test_scripts/input/test_multiple_files.sh --global
-./test_scripts/input/test_folder.sh --global
-./test_scripts/input/test_regex.sh --global
-./test_scripts/interlines/test_interlines_default.sh --global
-./test_scripts/interlines/test_interlines_targets.sh --global
-./test_scripts/interlines/test_interlines_all.sh --global
-./test_scripts/format/test_multiline_format.sh --global
-./test_scripts/output/test_output_dir.sh --global
-./test_scripts/indent/test_indent_width_default.sh --global
-./test_scripts/indent/test_indent_width_custom.sh --global
-./test_scripts/case/test_case_default.sh --global
-./test_scripts/case/test_case_lower.sh --global
-./test_scripts/case/test_case_upper.sh --global
-./test_scripts/case/test_case_full_lowercase.sh --global
-./test_scripts/combined/test_multiline_output.sh --global
-./test_scripts/combined/test_indent_and_case.sh --global
+./test_scripts/interlines/test_interlines_pictures.sh --global
 ```
 
 #### Test Scripts Overview
@@ -260,13 +254,23 @@ Test scripts are in `test_scripts/` directory, organized by category:
 |--------|---------|
 | `test_scripts/input/test_single_file.sh` | Single file input with `-i --file` |
 | `test_scripts/input/test_multiple_files.sh` | Multiple files input with `-i --multiple` |
-| `test_scripts/input/test_folder.sh` | Directory input with `-i --directory` |
+| `test_scripts/input/test_directory.sh` | Directory input with `-i --directory` |
 | `test_scripts/input/test_regex.sh` | Glob pattern input with `-i --regex` |
-| `test_scripts/interlines/test_interlines_default.sh` | Test `-n 2` (defaults to maps) |
-| `test_scripts/interlines/test_interlines_targets.sh` | Test `-n 1 --characters --global-switches` |
+| `test_scripts/interlines/test_interlines_default.sh` | Test `-n 1` (defaults to maps only) |
+| `test_scripts/interlines/test_interlines_targets.sh` | Test `-n 1 --characters --global-switches --pictures` |
 | `test_scripts/interlines/test_interlines_all.sh` | Test `-n 1 --all` flag |
+| `test_scripts/interlines/test_interlines_pictures.sh` | Test `-n 1 --pictures` for pictures.rpy |
+| `test_scripts/interlines/test_interlines_double_spacing.sh` | Test `-n 2 --pictures` double spacing |
 | `test_scripts/format/test_multiline_format.sh` | Test `-f --multiline` format |
 | `test_scripts/output/test_output_dir.sh` | Test custom output directory `-o` |
+| `test_scripts/indent/test_indent_width_default.sh` | Test default 4-space indent |
+| `test_scripts/indent/test_indent_width_custom.sh` | Test custom `-s 2` indent |
+| `test_scripts/case/test_case_default.sh` | Test default title case |
+| `test_scripts/case/test_case_lower.sh` | Test `-c --lower` lowercase |
+| `test_scripts/case/test_case_upper.sh` | Test `-c --upper` uppercase |
+| `test_scripts/case/test_case_full_lowercase.sh` | Test all-lowercase mode |
+| `test_scripts/combined/test_multiline_output.sh` | Test multiline + custom output + interlines |
+| `test_scripts/combined/test_indent_and_case.sh` | Test indent + case combination |
 | `test_scripts/indent/test_indent_width_default.sh` | Test default indent width (4 spaces) |
 | `test_scripts/indent/test_indent_width_custom.sh` | Test `-s 2` custom indent width |
 | `test_scripts/case/test_case_default.sh` | Test default case (title var/display, lower image) |
