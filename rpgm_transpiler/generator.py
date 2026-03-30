@@ -46,6 +46,7 @@ from .collector import DataCollector
 from .helpers import (
     safe_var, safe_label, safe_map_label, clean_text,
     clean_text_preserve_lines, join_with_interlines, safe_audio_var,
+    safe_picture_var,
 )
 
 
@@ -1511,6 +1512,99 @@ class RenPyGenerator:
                 
                 # Emit as comment for manual handling
                 self._emit(f"# [Script] {script_content}")
+
+            # ── SHOW_PICTURE (code 231): Display image on screen ──
+            # Parameters: [picture_number, filename, origin, x, y, x_type, y_type, zoom_x, zoom_y, opacity, blend_mode]
+            # Emits: show bg picture_{name} as picture_{N} at picture_position(x, y, zx, zy, alpha)
+            elif command_code == CMD["SHOW_PICTURE"]:
+                # Flush any pending text
+                self._flush_text()
+
+                if len(parameters) >= 10:
+                    pic_id = parameters[0]
+                    filename = parameters[1]
+                    x = parameters[3]
+                    y = parameters[4]
+                    zoom_x = parameters[6] / 100.0   # percentage to float
+                    zoom_y = parameters[7] / 100.0
+                    opacity = parameters[8] / 255.0   # 0-255 to 0.0-1.0
+                    safe_name = safe_picture_var(filename)
+                    self._emit(
+                        f'show bg picture_{safe_name} as picture_{pic_id} '
+                        f'at picture_position({x}, {y}, {zoom_x}, {zoom_y}, {opacity})'
+                    )
+                elif len(parameters) >= 2:
+                    # Minimal params: just picture_number and filename
+                    pic_id = parameters[0]
+                    filename = parameters[1]
+                    safe_name = safe_picture_var(filename)
+                    self._emit(f'show bg picture_{safe_name} as picture_{pic_id}')
+
+            # ── MOVE_PICTURE (code 232): Move/resize/fade a picture ──
+            # Parameters: [picture_number, filename, origin, x, y, x_type, y_type, zoom_x, zoom_y, opacity, blend_mode, duration, wait_flag]
+            # No direct Ren'Py equivalent for smooth animation; re-shows with new transform + comment
+            elif command_code == CMD["MOVE_PICTURE"]:
+                # Flush any pending text
+                self._flush_text()
+
+                if len(parameters) >= 10:
+                    pic_id = parameters[0]
+                    x = parameters[3]
+                    y = parameters[4]
+                    zoom_x = parameters[6] / 100.0
+                    zoom_y = parameters[7] / 100.0
+                    opacity = parameters[8] / 255.0
+                    self._emit(f"# [Move Picture {pic_id}] pos=({x}, {y}) zoom=({zoom_x}, {zoom_y}) opacity={opacity:.2f}")
+                    self._emit(
+                        f'show picture_{pic_id} at picture_position({x}, {y}, {zoom_x}, {zoom_y}, {opacity})'
+                    )
+                elif len(parameters) >= 1:
+                    pic_id = parameters[0]
+                    self._emit(f"# [Move Picture {pic_id}]")
+
+            # ── ROTATE_PICTURE (code 233): Rotate a picture ──
+            # Parameters: [picture_number, speed]
+            # No direct Ren'Py equivalent; emitted as a comment for manual handling
+            elif command_code == CMD["ROTATE_PICTURE"]:
+                # Flush any pending text
+                self._flush_text()
+
+                if len(parameters) >= 2:
+                    pic_id = parameters[0]
+                    speed = parameters[1]
+                    self._emit(f"# [Rotate Picture {pic_id}] speed={speed} deg/frame")
+                elif len(parameters) >= 1:
+                    pic_id = parameters[0]
+                    self._emit(f"# [Rotate Picture {pic_id}]")
+
+            # ── TINT_PICTURE (code 234): Apply color tint to a picture ──
+            # Parameters: [picture_number, red, green, blue, gray, duration, wait_flag]
+            # No direct Ren'Py equivalent; emitted as a comment for manual handling
+            elif command_code == CMD["TINT_PICTURE"]:
+                # Flush any pending text
+                self._flush_text()
+
+                if len(parameters) >= 5:
+                    pic_id = parameters[0]
+                    red = parameters[1]
+                    green = parameters[2]
+                    blue = parameters[3]
+                    gray = parameters[4]
+                    self._emit(f"# [Tint Picture {pic_id}] rgb=({red}, {green}, {blue}) gray={gray}")
+                elif len(parameters) >= 1:
+                    pic_id = parameters[0]
+                    self._emit(f"# [Tint Picture {pic_id}]")
+
+            # ── ERASE_PICTURE (code 235): Remove a picture from screen ──
+            # Parameters: [picture_number]
+            # Emits: hide picture_{N} onlayer pictures
+            elif command_code == CMD["ERASE_PICTURE"]:
+                # Flush any pending text
+                self._flush_text()
+
+                if len(parameters) >= 1:
+                    pic_id = parameters[0]
+                    self._emit(f'hide picture_{pic_id} onlayer pictures')
 
             # ── MOVE_ROUTE / MOVE_PARAM (codes 205, 505): Movement commands ──
             # Not transpiled (visual novel doesn't have sprite movement)

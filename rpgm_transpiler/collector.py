@@ -223,6 +223,11 @@ class DataCollector:
         self.audio_se: set[str] = set()
         self.audio_me: set[str] = set()
 
+        # Picture filenames: set of unique image file names from Show Picture commands
+        # Used by generate_pictures_rpy() to create image bg picture_<name> declarations
+        # Collected from SHOW_PICTURE (code 231) commands in events and common events
+        self.picture_filenames: set[str] = set()
+
     @staticmethod
     def _sanitize_name_for_variable(name: str) -> str:
         """Convert a human-readable name to a safe Python variable suffix.
@@ -1044,6 +1049,14 @@ class DataCollector:
                 sound_name = sound_obj.get("name", "")
                 if sound_name:
                     self.audio_se.add(sound_name)
+
+            # ── SHOW_PICTURE (code 231): Display image on screen ──
+            # Parameters: [picture_number, filename, origin, x, y, x_type, y_type, zoom_x, zoom_y, opacity, blend_mode]
+            # We collect the filename for generating image definitions in pictures.rpy
+            elif command_code == CMD["SHOW_PICTURE"] and len(parameters) >= 2:
+                filename = parameters[1]
+                if filename:
+                    self.picture_filenames.add(filename)
 
     @staticmethod
     def _clean_character_name(face_name: str) -> str:

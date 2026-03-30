@@ -5,9 +5,10 @@ modules. Each function is pure (no side effects) and handles a specific
 transformation needed during transpilation.
 
 Functions are organized by purpose:
-- Name sanitization: safe_var(), safe_label()
+- Name sanitization: safe_var(), safe_label(), safe_audio_var(), safe_picture_var()
 - Text processing: clean_text(), clean_text_preserve_lines()
 - Asset conversion: side_image_tag()
+- Formatting: join_with_interlines()
 
 Design Philosophy:
 - All functions are pure: same input → same output, no external state
@@ -126,6 +127,64 @@ def safe_audio_var(name: str) -> str:
     # Python identifiers can't start with a digit
     if clean and clean[0].isdigit():
         clean = f"_{clean}"
+
+    return clean
+
+
+def safe_picture_var(name: str) -> str:
+    """Convert an RPG Maker picture filename to a valid Ren'Py image tag and variable name.
+
+    RPG Maker MV picture filenames may contain spaces, hyphens, and other characters
+    that are invalid in Ren'Py image tags and Python identifiers. This function
+    sanitizes the name while preserving readability.
+
+    Transforms:
+    - Spaces become underscores: "instruction 6" → "instruction_6"
+    - Hyphens become underscores: "my-picture" → "my_picture"
+    - Only alphanumeric and underscore characters kept
+    - Consecutive underscores collapsed to single: "a___b" → "a_b"
+    - Leading/trailing underscores stripped
+
+    Args:
+        name: Raw picture filename from RPG Maker.
+        Examples: "Poster_Recruitment", "instruction 6", "Claire_vs_MeanRefugee_Strip_1B"
+
+    Returns:
+        Sanitized name suitable for use in Ren'Py image tags and variable names.
+        Examples: "Poster_Recruitment", "instruction_6", "Claire_vs_MeanRefugee_Strip_1B"
+
+    Example:
+        >>> safe_picture_var("Poster_Recruitment")
+        'Poster_Recruitment'
+        >>> safe_picture_var("instruction 6")
+        'instruction_6'
+        >>> safe_picture_var("Claire vs MeanRefugee Strip 1B")
+        'Claire_vs_MeanRefugee_Strip_1B'
+
+    Note:
+        The result is used in Ren'Py image definitions and show/hide statements:
+        image bg picture_Poster_Recruitment = "img/pictures/Poster_Recruitment.png"
+        show bg picture_Poster_Recruitment as picture_3
+        hide picture_3 onlayer pictures
+    """
+    # Step 1: Strip leading/trailing whitespace
+    clean = name.strip()
+
+    # Step 2: Replace spaces with underscores
+    clean = clean.replace(" ", "_")
+
+    # Step 3: Replace hyphens with underscores
+    clean = clean.replace("-", "_")
+
+    # Step 4: Filter to only alphanumeric and underscore characters
+    clean = "".join(char for char in clean if char.isalnum() or char == "_")
+
+    # Step 5: Collapse consecutive underscores into single underscore
+    while "__" in clean:
+        clean = clean.replace("__", "_")
+
+    # Step 6: Strip leading/trailing underscores
+    clean = clean.strip("_")
 
     return clean
 

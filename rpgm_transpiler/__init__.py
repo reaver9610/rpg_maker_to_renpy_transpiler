@@ -90,6 +90,7 @@ from .game_flow import generate_game_flow_rpy
 from .side_images import generate_side_images_rpy
 from .common_events import generate_common_events_rpy
 from .audio import generate_audio_rpy
+from .pictures import generate_pictures_rpy
 from .helpers import to_title_case, safe_map_label
 
 __all__ = [
@@ -109,6 +110,7 @@ __all__ = [
     "generate_game_flow_rpy",
     "generate_common_events_rpy",
     "generate_audio_rpy",
+    "generate_pictures_rpy",
 ]
 
 
@@ -464,6 +466,7 @@ def transpile_to_renpy(
     print(f"    {len(collector.switch_ids)} switches")
     print(f"    {len(collector.variable_ids)} variables")
     print(f"    {total_self_switches} self-switches across {len(collector.self_switches)} maps")
+    print(f"    {len(collector.picture_filenames)} pictures")
     print()
 
     # ═══════════════════════════════════════════════════════════════════
@@ -581,6 +584,26 @@ def transpile_to_renpy(
     audio_dir = os.path.join(output_dir, "audio")
     for subdir in ("bgm", "bgs", "se", "me"):
         os.makedirs(os.path.join(audio_dir, subdir), exist_ok=True)
+
+    # ═══════════════════════════════════════════════════════════════════
+    # PHASE 4c: Generate pictures.rpy (picture layer, transforms, image definitions)
+    # ═══════════════════════════════════════════════════════════════════
+
+    # Generate the pictures definitions file
+    pictures_interlines = interlines if "pictures" in interlines_targets else 0
+    pictures_src = generate_pictures_rpy(collector, interlines=pictures_interlines, indent_width=indent_width)
+
+    # Only write the file if there are pictures to define
+    if pictures_src:
+        pictures_path = os.path.join(output_dir, "pictures.rpy")
+        with open(pictures_path, "w", encoding="utf-8") as output_file:
+            output_file.write(pictures_src)
+        print(f"[OK] {pictures_path}")
+
+        # Create the img/pictures directory for user to place image files
+        # These mirror the RPG Maker MV img/pictures/ folder layout
+        pictures_dir = os.path.join(output_dir, "img", "pictures")
+        os.makedirs(pictures_dir, exist_ok=True)
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 5: Generate per-map files (placeholder, autorun, events)

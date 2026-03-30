@@ -346,6 +346,13 @@ def parse_args() -> argparse.Namespace:
         help="Apply interlines to audio.rpy"
     )
     argument_parser.add_argument(
+        "--pictures",
+        action="store_true",
+        dest="interlines_pictures",
+        default=False,
+        help="Apply interlines to pictures.rpy"
+    )
+    argument_parser.add_argument(
         "--all",
         action="store_true",
         dest="interlines_all",
@@ -422,6 +429,7 @@ def parse_args() -> argparse.Namespace:
             "maps", "characters", "global_switches", "global_variables",
             "global_items", "global_economy", "global_quests",
             "side_images", "game_flow", "common_events", "audio",
+            "pictures",
         }
     elif args.interlines > 0:
         # -n was used, check for specific targets
@@ -435,7 +443,8 @@ def parse_args() -> argparse.Namespace:
             getattr(args, "interlines_side_images", False) or
             getattr(args, "interlines_game_flow", False) or
             getattr(args, "interlines_common_events", False) or
-            getattr(args, "interlines_audio", False)):
+            getattr(args, "interlines_audio", False) or
+            getattr(args, "interlines_pictures", False)):
             # Specific targets specified, use those
             if getattr(args, "interlines_maps", False):
                 interlines_targets.add("maps")
@@ -459,6 +468,8 @@ def parse_args() -> argparse.Namespace:
                 interlines_targets.add("common_events")
             if getattr(args, "interlines_audio", False):
                 interlines_targets.add("audio")
+            if getattr(args, "interlines_pictures", False):
+                interlines_targets.add("pictures")
         else:
             # No specific targets, default to maps only
             interlines_targets = {"maps"}

@@ -31,7 +31,7 @@ Command Hierarchy:
 # Then compare against the command's 'code' field to identify the type.
 #
 # Not all RPG Maker commands are included—only those relevant to dialogue,
-# game state, and navigation. Commands like "Show Picture" or "Screen Fade"
+# game state, navigation, and pictures. Commands like "Screen Fade"
 # are skipped and would need manual handling in the generated Ren'Py code.
 CMD: dict[str, int] = {
     # ═══════════════════════════════════════════════════════════════
@@ -224,6 +224,50 @@ CMD: dict[str, int] = {
     # This is the primary map navigation command.
     # The generator emits: jump map_{map_id}_enter
     "TRANSFER_PLAYER": 201,
+
+    # ═══════════════════════════════════════════════════════════════
+    # PICTURE COMMANDS
+    # ═══════════════════════════════════════════════════════════════
+
+    # SHOW_PICTURE (code 231): Displays an image at a given position on screen.
+    # Parameters: [picture_number, filename, origin, x, y, x_type, y_type, zoom_x, zoom_y, opacity, blend_mode]
+    # - picture_number: Slot ID (1-100) identifying this picture instance
+    # - filename: Image file from img/pictures/ folder (without extension)
+    # - origin: 0=top-left corner, 1=center point
+    # - x, y: Position in pixels (interpreted relative to origin)
+    # - x_type, y_type: 0=direct value, 1=variable reference
+    # - zoom_x, zoom_y: Scale percentage (100=normal size)
+    # - opacity: Transparency (0=invisible, 255=fully opaque)
+    # - blend_mode: 0=normal, 1=additive, 2=multiply, 3=screen
+    # The generator emits: show bg picture_{name} as picture_{N} at picture_position(...)
+    "SHOW_PICTURE": 231,
+
+    # MOVE_PICTURE (code 232): Moves, resizes, or fades a displayed picture.
+    # Parameters: [picture_number, filename, origin, x, y, x_type, y_type, zoom_x, zoom_y, opacity, blend_mode, duration, wait_flag]
+    # - duration: Time in frames for the movement animation
+    # - wait_flag: 0=don't wait, 1=wait for completion
+    # Re-shows the picture with updated transform parameters.
+    # The generator emits: show picture_{N} at picture_position(...) + a comment
+    "MOVE_PICTURE": 232,
+
+    # ROTATE_PICTURE (code 233): Rotates a displayed picture.
+    # Parameters: [picture_number, speed]
+    # - speed: Degrees per frame to rotate (positive=clockwise, negative=counterclockwise)
+    # No direct Ren'Py equivalent; emitted as a comment for manual handling.
+    "ROTATE_PICTURE": 233,
+
+    # TINT_PICTURE (code 234): Applies a color tint to a displayed picture.
+    # Parameters: [picture_number, red, green, blue, gray, duration, wait_flag]
+    # - red, green, blue, gray: Color shift values (-255 to 255, 0=no tint)
+    # - duration: Time in frames for the tint transition
+    # No direct Ren'Py equivalent; emitted as a comment for manual handling.
+    "TINT_PICTURE": 234,
+
+    # ERASE_PICTURE (code 235): Removes a picture from the screen.
+    # Parameters: [picture_number]
+    # - picture_number: The slot ID of the picture to remove
+    # The generator emits: hide picture_{N} onlayer pictures
+    "ERASE_PICTURE": 235,
 
     # ═══════════════════════════════════════════════════════════════
     # SCREEN EFFECTS
