@@ -75,6 +75,61 @@ def safe_var(name: str) -> str:
     return clean
 
 
+def safe_audio_var(name: str) -> str:
+    """Convert an audio file name to a valid Python identifier for Ren'Py audio namespace.
+
+    Ren'Py's audio namespace requires valid Python identifiers for variable names.
+    Audio file names from RPG Maker may contain spaces, hyphens, and other characters
+    that are invalid in Python identifiers.
+
+    This function sanitizes the name while preserving readability:
+    - Spaces become underscores: "Paths of Peril" → "Paths_of_Peril"
+    - Hyphens become underscores: "slow-jam" → "slow_jam"
+    - Only alphanumeric and underscore characters kept
+
+    Args:
+        name: Raw audio file name from RPG Maker.
+        Examples: "Paths of Peril", "Kingdom of Peril Alt 1", "Contemplation"
+
+    Returns:
+        Sanitized name suitable for use in audio namespace.
+        Examples: "Paths_of_Peril", "Kingdom_of_Peril_Alt_1", "Contemplation"
+
+    Example:
+        >>> safe_audio_var("Paths of Peril")
+        'Paths_of_Peril'
+        >>> safe_audio_var("Kingdom of Peril Alt 1")
+        'Kingdom_of_Peril_Alt_1'
+        >>> safe_audio_var("slow-jam")
+        'slow_jam'
+
+    Note:
+        The result can be used in Ren'Py define statements:
+        define audio.bgm_Paths_of_Peril = "audio/bgm/Paths of Peril.ogg"
+        
+        And play statements will find it in the audio namespace:
+        play music bgm_Paths_of_Peril
+    """
+    # Step 1: Strip leading/trailing whitespace
+    clean = name.strip()
+
+    # Step 2: Replace spaces with underscores
+    clean = clean.replace(" ", "_")
+
+    # Step 3: Replace hyphens with underscores
+    clean = clean.replace("-", "_")
+
+    # Step 4: Filter to only alphanumeric and underscore characters
+    clean = "".join(char for char in clean if char.isalnum() or char == "_")
+
+    # Step 5: Ensure it doesn't start with a digit
+    # Python identifiers can't start with a digit
+    if clean and clean[0].isdigit():
+        clean = f"_{clean}"
+
+    return clean
+
+
 def safe_label(name: str, event_id: int) -> str:
     """Convert an event name to a valid Ren'Py label.
 

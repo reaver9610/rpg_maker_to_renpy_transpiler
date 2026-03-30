@@ -250,10 +250,33 @@ CMD: dict[str, int] = {
     # The generator converts to seconds: pause {seconds}
     "WAIT": 230,
     
+    # PLAY_BGM (code 241): Plays background music.
+    # Parameters: [sound_object]
+    # - sound_object: Dict with 'name', 'volume', 'pitch', 'pan'
+    # Changes the current BGM track mid-event (unlike map autoplay which fires on entry).
+    # The generator emits: play music "audio/bgm/{name}.{ext}"
+    "PLAY_BGM": 241,
+
+    # PLAY_BGS (code 245): Plays background sound (ambient loop).
+    # Parameters: [sound_object]
+    # - sound_object: Dict with 'name', 'volume', 'pitch', 'pan'
+    # BGS is ambient audio that loops (rain, wind, crowd noise, etc.).
+    # Ren'Py has no default 'bgs' channel, so a custom channel must be registered.
+    # The generator emits: play bgs "audio/bgs/{name}.{ext}"
+    "PLAY_BGS": 245,
+
+    # PLAY_ME (code 249): Plays a music effect (short jingle/fanfare).
+    # Parameters: [sound_object]
+    # - sound_object: Dict with 'name', 'volume', 'pitch', 'pan'
+    # MEs are short musical stings (victory fanfare, inn rest, etc.) that
+    # typically pause other audio while playing. Maps to Ren'Py sound channel.
+    # The generator emits: play sound "audio/me/{name}.{ext}"
+    "PLAY_ME": 249,
+
     # PLAY_SE (code 250): Plays a sound effect file.
     # Parameters: [sound_object]
     # - sound_object: Dict with 'name', 'volume', 'pitch', 'pan'
-    # The generator extracts the sound name and emits: play sound "{name}.ogg"
+    # The generator extracts the sound name and emits: play sound "audio/se/{name}.{ext}"
     # Note: Ren'Py uses .ogg format; RPG Maker may use .wav or .ogg.
     "PLAY_SE": 250,
     

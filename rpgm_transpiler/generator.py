@@ -45,7 +45,7 @@ from .constants import CMD
 from .collector import DataCollector
 from .helpers import (
     safe_var, safe_label, safe_map_label, clean_text,
-    clean_text_preserve_lines, join_with_interlines,
+    clean_text_preserve_lines, join_with_interlines, safe_audio_var,
 )
 
 
@@ -151,6 +151,9 @@ class RenPyGenerator:
         CMD["CHANGE_GOLD"],      # 125 - $ game_economy...
         CMD["TRANSFER_PLAYER"],  # 201 - jump map_X
         CMD["WAIT"],             # 230 - pause X
+        CMD["PLAY_BGM"],         # 241 - play music
+        CMD["PLAY_BGS"],         # 245 - play bgs
+        CMD["PLAY_ME"],          # 249 - play sound (ME)
         CMD["PLAY_SE"],          # 250 - play sound
         CMD["PLUGIN_COMMAND"],   # 356 - Variable output
         CMD["SCRIPT"],           # 355 - # [Script] comment
@@ -166,6 +169,7 @@ class RenPyGenerator:
         interlines: int = 0,
         map_name: str | None = None,
         indent_width: int = 4,
+        audio_ext: str = "ogg",
     ) -> None:
         """Initialize the generator with map data and shared metadata.
 
@@ -196,6 +200,8 @@ class RenPyGenerator:
         Used in file header comments.
         indent_width: Number of spaces per indentation level.
         Defaults to 4.
+        audio_ext: File extension for audio files (default: "ogg").
+        Used when emitting play music/sound/bgs commands.
 
         Example:
             >>> collector = DataCollector()
@@ -236,6 +242,11 @@ class RenPyGenerator:
         # Store the indent width for use in _indent method
         # Number of spaces per indentation level
         self.indent_width = indent_width
+
+        # Store the audio file extension
+        # Used when emitting play music/sound/bgs commands
+        # e.g., "ogg" produces "audio/bgm/Track.ogg"
+        self.audio_ext = audio_ext
 
         # Store the global label name for this map
         # Used for local label qualification: map_{id}_{Title_Case_Name}
@@ -538,6 +549,29 @@ class RenPyGenerator:
         """
         buf: list[str] = []
         self._emit_header_to(buf)
+
+        # ── Emit autoplay BGM/BGS if configured for this map ──
+        # RPG Maker maps have autoplayBgm/autoplayBgs flags that trigger audio on entry.
+        # These are emitted before the label body so they play immediately on map load.
+        if self.map_data.get("autoplayBgm", False):
+            bgm_obj = self.map_data.get("bgm", {})
+            bgm_name = bgm_obj.get("name", "")
+            if bgm_name:
+                # Sanitize name for valid Python identifier
+                safe_name = safe_audio_var(bgm_name)
+                # Use custom 'bgm' channel
+                buf.append(f"play bgm bgm_{safe_name}")
+
+        if self.map_data.get("autoplayBgs", False):
+            bgs_obj = self.map_data.get("bgs", {})
+            bgs_name = bgs_obj.get("name", "")
+            if bgs_name:
+                safe_name = safe_audio_var(bgs_name)
+                buf.append(f"play bgs bgs_{safe_name}")
+
+        # Add a blank line separator between audio commands and label if audio was emitted
+        if buf and buf[-1] != "":
+            buf.append("")
 
         buf.append(f"label {self.map_label_name}:")
 
@@ -1357,23 +1391,78 @@ class RenPyGenerator:
                 # Emit the pause command
                 self._emit(f"pause {seconds}")
 
+            # ── PLAY_BGM (code 241): Play background music ──
+            # Emits: play bgm bgm_{sanitized_name}
+            elif command_code == CMD["PLAY_BGM"]:
+                # Flush any pending text
+                self._flush_text()
+
+                # Extract sound object (first parameter)
+                sound_obj = parameters[0] if parameters else {}
+
+                # Get the sound file name
+                sound_name = sound_obj.get("name", "")
+
+                # Only emit if a sound is specified
+                if sound_name:
+                    # Sanitize name for valid Python identifier
+                    safe_name = safe_audio_var(sound_name)
+                    # Use custom 'bgm' channel
+                    self._emit(f"play bgm bgm_{safe_name}")
+
+            # ── PLAY_BGS (code 245): Play background sound (ambient loop) ──
+            # Emits: play bgs bgs_{sanitized_name}
+            elif command_code == CMD["PLAY_BGS"]:
+                # Flush any pending text
+                self._flush_text()
+
+                # Extract sound object (first parameter)
+                sound_obj = parameters[0] if parameters else {}
+
+                # Get the sound file name
+                sound_name = sound_obj.get("name", "")
+
+                # Only emit if a sound is specified
+                if sound_name:
+                    safe_name = safe_audio_var(sound_name)
+                    self._emit(f"play bgs bgs_{safe_name}")
+
+            # ── PLAY_ME (code 249): Play music effect (jingle/fanfare) ──
+            # Emits: play me me_{sanitized_name}
+            # MEs are short stings using custom 'me' channel
+            elif command_code == CMD["PLAY_ME"]:
+                # Flush any pending text
+                self._flush_text()
+
+                # Extract sound object (first parameter)
+                sound_obj = parameters[0] if parameters else {}
+
+                # Get the sound file name
+                sound_name = sound_obj.get("name", "")
+
+                # Only emit if a sound is specified
+                if sound_name:
+                    safe_name = safe_audio_var(sound_name)
+                    # Use custom 'me' channel
+                    self._emit(f"play me me_{safe_name}")
+
             # ── PLAY_SE (code 250): Play sound effect ──
-            # Emits: play sound "{name}.ogg"
+            # Emits: play se se_{sanitized_name}
             elif command_code == CMD["PLAY_SE"]:
                 # Flush any pending text
                 self._flush_text()
-                
+
                 # Extract sound effect object (first parameter)
                 sound_effect = parameters[0] if parameters else {}
-                
+
                 # Get the sound file name
                 sound_name = sound_effect.get("name", "")
-                
+
                 # Only emit if a sound is specified
                 if sound_name:
-                    # Emit the play sound command
-                    # Note: Assumes .ogg format (may need adjustment)
-                    self._emit(f'play sound "{sound_name}.ogg"')
+                    safe_name = safe_audio_var(sound_name)
+                    # Use custom 'se' channel
+                    self._emit(f"play se se_{safe_name}")
 
             # ── TRANSFER_PLAYER (code 201): Jump to another map ──
             # Emits: jump map_{id}_{Name}
@@ -1868,12 +1957,37 @@ class RenPyGenerator:
             seconds = round(frame_count / 60.0, 2)
             self._emit(f"pause {seconds}")
 
+        # ── PLAY_BGM: Play background music ──
+        elif command_code == CMD["PLAY_BGM"]:
+            sound_obj = parameters[0] if parameters else {}
+            sound_name = sound_obj.get("name", "")
+            if sound_name:
+                safe_name = safe_audio_var(sound_name)
+                self._emit(f"play bgm bgm_{safe_name}")
+
+        # ── PLAY_BGS: Play background sound ──
+        elif command_code == CMD["PLAY_BGS"]:
+            sound_obj = parameters[0] if parameters else {}
+            sound_name = sound_obj.get("name", "")
+            if sound_name:
+                safe_name = safe_audio_var(sound_name)
+                self._emit(f"play bgs bgs_{safe_name}")
+
+        # ── PLAY_ME: Play music effect ──
+        elif command_code == CMD["PLAY_ME"]:
+            sound_obj = parameters[0] if parameters else {}
+            sound_name = sound_obj.get("name", "")
+            if sound_name:
+                safe_name = safe_audio_var(sound_name)
+                self._emit(f"play me me_{safe_name}")
+
         # ── PLAY_SE: Play sound effect ──
         elif command_code == CMD["PLAY_SE"]:
             sound_effect = parameters[0] if parameters else {}
             sound_name = sound_effect.get("name", "")
             if sound_name:
-                self._emit(f'play sound "{sound_name}.ogg"')
+                safe_name = safe_audio_var(sound_name)
+                self._emit(f"play se se_{safe_name}")
 
         # ── TRANSFER_PLAYER: Jump to another map ──
         elif command_code == CMD["TRANSFER_PLAYER"]:

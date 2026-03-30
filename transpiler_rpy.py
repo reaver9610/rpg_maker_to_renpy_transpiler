@@ -172,6 +172,15 @@ def parse_args() -> argparse.Namespace:
         help="Number of spaces per indentation level (default: 4)"
     )
 
+    # Audio file extension option
+    argument_parser.add_argument(
+        "-a", "--audio-ext",
+        metavar="EXT",
+        choices=["ogg", "opus", "mp3", "mp2", "flac", "wav"],
+        default="ogg",
+        help="Audio file extension for generated references (default: ogg). Supported: ogg, opus, mp3, mp2, flac, wav"
+    )
+
     # Case flag - parsed manually for --lower/--title/--upper and their variants
     argument_parser.add_argument(
         "-c", "--case",
@@ -330,6 +339,13 @@ def parse_args() -> argparse.Namespace:
         help="Apply interlines to common event files"
     )
     argument_parser.add_argument(
+        "--audio",
+        action="store_true",
+        dest="interlines_audio",
+        default=False,
+        help="Apply interlines to audio.rpy"
+    )
+    argument_parser.add_argument(
         "--all",
         action="store_true",
         dest="interlines_all",
@@ -405,7 +421,7 @@ def parse_args() -> argparse.Namespace:
         interlines_targets = {
             "maps", "characters", "global_switches", "global_variables",
             "global_items", "global_economy", "global_quests",
-            "side_images", "game_flow", "common_events",
+            "side_images", "game_flow", "common_events", "audio",
         }
     elif args.interlines > 0:
         # -n was used, check for specific targets
@@ -418,7 +434,8 @@ def parse_args() -> argparse.Namespace:
             getattr(args, "interlines_global_quests", False) or
             getattr(args, "interlines_side_images", False) or
             getattr(args, "interlines_game_flow", False) or
-            getattr(args, "interlines_common_events", False)):
+            getattr(args, "interlines_common_events", False) or
+            getattr(args, "interlines_audio", False)):
             # Specific targets specified, use those
             if getattr(args, "interlines_maps", False):
                 interlines_targets.add("maps")
@@ -440,6 +457,8 @@ def parse_args() -> argparse.Namespace:
                 interlines_targets.add("game_flow")
             if getattr(args, "interlines_common_events", False):
                 interlines_targets.add("common_events")
+            if getattr(args, "interlines_audio", False):
+                interlines_targets.add("audio")
         else:
             # No specific targets, default to maps only
             interlines_targets = {"maps"}
@@ -565,6 +584,7 @@ def main() -> None:
         interlines_targets=cli_args.interlines_targets,
         indent_width=cli_args.indent_width,
         case_mode=cli_args.case_mode,
+        audio_ext=cli_args.audio_ext,
     )
 
 

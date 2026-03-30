@@ -89,6 +89,7 @@ from .switches import (
 from .game_flow import generate_game_flow_rpy
 from .side_images import generate_side_images_rpy
 from .common_events import generate_common_events_rpy
+from .audio import generate_audio_rpy
 from .helpers import to_title_case, safe_map_label
 
 __all__ = [
@@ -107,6 +108,7 @@ __all__ = [
     "generate_event_switches_rpy",
     "generate_game_flow_rpy",
     "generate_common_events_rpy",
+    "generate_audio_rpy",
 ]
 
 
@@ -118,6 +120,7 @@ def transpile_to_renpy(
     interlines_targets: set[str] | None = None,
     indent_width: int = 4,
     case_mode: dict[str, str] | None = None,
+    audio_ext: str = "ogg",
 ) -> None:
     """Transpile one or more RPG Maker MV JSON maps to Ren'Py .rpy scripts.
 
@@ -166,13 +169,16 @@ def transpile_to_renpy(
         interlines_targets: Set of file types to apply interlines to.
         Valid values: "maps", "characters", "global_switches", "global_variables",
         "global_items", "global_economy", "global_quests", "side_images", "game_flow",
-        "common_events".
+        "common_events", "audio".
         If None and interlines > 0, defaults to {"maps"}.
         If interlines == 0, this parameter is ignored.
         indent_width: Number of spaces per indentation level. Default is 4.
         case_mode: Dictionary specifying case for character names.
         Keys: "var", "display", "image". Values: "lower", "title", "upper".
         If None, defaults to {"var": "title", "display": "title", "image": "lower"}.
+        audio_ext: File extension for audio files. Default is "ogg".
+        Supported: ogg, opus, mp3, mp2, flac, wav.
+        Used in audio.rpy definitions and play music/sound/bgs commands.
 
     Example:
         >>> transpile_to_renpy(["inputs/Map001.json"], "renpy_output/")
@@ -553,6 +559,30 @@ def transpile_to_renpy(
     print(f"[OK] {side_images_path}")
 
     # ═══════════════════════════════════════════════════════════════════
+    # PHASE 4b: Generate audio.rpy (audio asset definitions)
+    # ═══════════════════════════════════════════════════════════════════
+
+    # Generate the audio definitions file
+    audio_interlines = interlines if "audio" in interlines_targets else 0
+    audio_definitions = generate_audio_rpy(collector, audio_ext=audio_ext, interlines=audio_interlines, indent_width=indent_width)
+
+    # Build the output file path
+    audio_path = os.path.join(output_dir, "audio.rpy")
+
+    # Write the file
+    with open(audio_path, "w", encoding="utf-8") as output_file:
+        output_file.write(audio_definitions)
+
+    # Log success
+    print(f"[OK] {audio_path}")
+
+    # Create the audio directory structure for user to place audio files
+    # These directories mirror the RPG Maker MV audio folder layout
+    audio_dir = os.path.join(output_dir, "audio")
+    for subdir in ("bgm", "bgs", "se", "me"):
+        os.makedirs(os.path.join(audio_dir, subdir), exist_ok=True)
+
+    # ═══════════════════════════════════════════════════════════════════
     # PHASE 5: Generate per-map files (placeholder, autorun, events)
     # ═══════════════════════════════════════════════════════════════════
 
@@ -580,6 +610,7 @@ def transpile_to_renpy(
             multiline=multiline, interlines=map_interlines,
             map_name=map_name_for_header,
             indent_width=indent_width,
+            audio_ext=audio_ext,
         )
 
         # Generate split output: map placeholder, autorun files, event files

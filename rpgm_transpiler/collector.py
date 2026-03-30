@@ -103,6 +103,22 @@ class DataCollector:
         All map IDs that appear in TRANSFER_PLAYER commands or input files
         Example: {1, 2, 5}
 
+    - audio_bgm: set[str]
+        All BGM file names from map autoplay and PLAY_BGM commands
+        Example: {"Paths of Peril", "Dungeon2"}
+
+    - audio_bgs: set[str]
+        All BGS file names from map autoplay and PLAY_BGS commands
+        Example: {"Night", "Whispers", "Sea"}
+
+    - audio_se: set[str]
+        All SE file names from PLAY_SE commands
+        Example: {"Move1", "Bell3", "Coin"}
+
+    - audio_me: set[str]
+        All ME file names from PLAY_ME commands
+        Example: {"Inn"}
+
     - plugin_commands: list[str]
         All plugin command strings encountered, in order of appearance
         Example: ["Quest Add main_quest", "Quest Complete main_quest"]
@@ -198,6 +214,14 @@ class DataCollector:
         # Armor names: armor_id → sanitized name from Armors.json
         # Used by generate_global_items_rpy() to initialize: armor_{id}_{name} = 0
         self.armor_names: dict[int, str] = {}
+
+        # Audio collections: sets of unique audio file names by type
+        # Used by generate_audio_rpy() to create define audio[] statements
+        # Collected from map autoplay settings and event commands (PLAY_BGM, PLAY_BGS, PLAY_SE, PLAY_ME)
+        self.audio_bgm: set[str] = set()
+        self.audio_bgs: set[str] = set()
+        self.audio_se: set[str] = set()
+        self.audio_me: set[str] = set()
 
     @staticmethod
     def _sanitize_name_for_variable(name: str) -> str:
@@ -680,6 +704,21 @@ class DataCollector:
         # This ensures the map appears in game_flow.rpy even if not referenced in transfers
         self.map_ids.add(map_id)
 
+        # Step 1b: Collect map-level autoplay audio references
+        # Each map has autoplayBgm/autoplayBgs flags and bgm/bgs sound objects
+        # When autoplay is enabled, the BGM/BGS plays automatically on map entry
+        if map_data.get("autoplayBgm", False):
+            bgm_obj = map_data.get("bgm", {})
+            bgm_name = bgm_obj.get("name", "")
+            if bgm_name:
+                self.audio_bgm.add(bgm_name)
+
+        if map_data.get("autoplayBgs", False):
+            bgs_obj = map_data.get("bgs", {})
+            bgs_name = bgs_obj.get("name", "")
+            if bgs_name:
+                self.audio_bgs.add(bgs_name)
+
         # Step 2: Get the events array from the map data
         # RPG Maker stores events as an array where indices are event IDs
         # Deleted events are represented as null (we skip these)
@@ -973,6 +1012,38 @@ class DataCollector:
                 # Store the plugin command string for potential special handling
                 # The list maintains order in case sequence matters
                 self.plugin_commands.append(parameters[0])
+
+            # ── PLAY_BGM (code 241): Play background music ──
+            # Parameters: [sound_object] where sound_object has 'name', 'volume', 'pitch', 'pan'
+            elif command_code == CMD["PLAY_BGM"]:
+                sound_obj = parameters[0] if parameters else {}
+                sound_name = sound_obj.get("name", "")
+                if sound_name:
+                    self.audio_bgm.add(sound_name)
+
+            # ── PLAY_BGS (code 245): Play background sound (ambient loop) ──
+            # Parameters: [sound_object] where sound_object has 'name', 'volume', 'pitch', 'pan'
+            elif command_code == CMD["PLAY_BGS"]:
+                sound_obj = parameters[0] if parameters else {}
+                sound_name = sound_obj.get("name", "")
+                if sound_name:
+                    self.audio_bgs.add(sound_name)
+
+            # ── PLAY_ME (code 249): Play music effect (jingle/fanfare) ──
+            # Parameters: [sound_object] where sound_object has 'name', 'volume', 'pitch', 'pan'
+            elif command_code == CMD["PLAY_ME"]:
+                sound_obj = parameters[0] if parameters else {}
+                sound_name = sound_obj.get("name", "")
+                if sound_name:
+                    self.audio_me.add(sound_name)
+
+            # ── PLAY_SE (code 250): Play sound effect ──
+            # Parameters: [sound_object] where sound_object has 'name', 'volume', 'pitch', 'pan'
+            elif command_code == CMD["PLAY_SE"]:
+                sound_obj = parameters[0] if parameters else {}
+                sound_name = sound_obj.get("name", "")
+                if sound_name:
+                    self.audio_se.add(sound_name)
 
     @staticmethod
     def _clean_character_name(face_name: str) -> str:
