@@ -1,9 +1,9 @@
-# Test scripts
-test_scripts/
+# Test output folders (keep outputs/ folder tracked via .gitignore !)
+outputs/*
+!outputs/.gitkeep
 
-# Input/Output directories (glob patterns)
-*input*/
-*output*/
+# Input directories
+inputs/
 
 # Python cache
 *.pyc
