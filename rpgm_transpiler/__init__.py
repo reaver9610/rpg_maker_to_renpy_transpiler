@@ -281,11 +281,12 @@ def transpile_to_renpy(
     
     # Load item/weapon/armor names from JSON database files
     # These files contain arrays of objects with "id" and "name" fields
+    # Also populates collector.item_ids/weapon_ids/armor_ids with ALL database IDs
     if input_paths:
         input_dir = os.path.dirname(input_paths[0]) or "."
         
-        # Helper to load JSON array and populate name dict
-        def load_json_names(filename: str, target_dict: dict[int, str]) -> None:
+        # Helper to load JSON array and populate name dict and ID set
+        def load_json_names(filename: str, target_dict: dict[int, str], id_set: set[int] | None = None) -> None:
             json_path = os.path.join(input_dir, filename)
             if not os.path.exists(json_path):
                 # Also check workspace root
@@ -303,14 +304,18 @@ def transpile_to_renpy(
                                 item_id = item["id"]
                                 item_name = item["name"]
                                 target_dict[item_id] = item_name
+                                if id_set is not None:
+                                    id_set.add(item_id)
                         print(f"[INFO] Loaded {len(target_dict)} names from {filename}")
+                        if id_set is not None:
+                            print(f"[INFO] Added {len(id_set)} IDs from {filename}")
             except (json.JSONDecodeError, OSError) as e:
                 print(f"[WARN] Could not load {filename}: {e}")
         
-        # Load each database file
-        load_json_names("Items.json", collector.item_names)
-        load_json_names("Weapons.json", collector.weapon_names)
-        load_json_names("Armors.json", collector.armor_names)
+        # Load each database file and populate both names and IDs
+        load_json_names("Items.json", collector.item_names, collector.item_ids)
+        load_json_names("Weapons.json", collector.weapon_names, collector.weapon_ids)
+        load_json_names("Armors.json", collector.armor_names, collector.armor_ids)
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 0d: Load MapInfos.json if available
