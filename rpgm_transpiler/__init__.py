@@ -259,7 +259,7 @@ def transpile_to_renpy(
         # Check if System.json exists
         if os.path.exists(system_json_path):
             try:
-                with open(system_json_path, "r", encoding="utf-8") as system_file:
+                with open(system_json_path, "r", encoding="utf-8", errors="replace") as system_file:
                     collector.system_data = json.load(system_file)
                 print(f"[INFO] Loaded System.json for switch/variable name resolution")
             except (json.JSONDecodeError, OSError) as e:
@@ -269,7 +269,7 @@ def transpile_to_renpy(
             root_system_path = os.path.join(".", "System.json")
             if root_system_path != system_json_path and os.path.exists(root_system_path):
                 try:
-                    with open(root_system_path, "r", encoding="utf-8") as system_file:
+                    with open(root_system_path, "r", encoding="utf-8", errors="replace") as system_file:
                         collector.system_data = json.load(system_file)
                     print(f"[INFO] Loaded System.json for switch/variable name resolution")
                 except (json.JSONDecodeError, OSError) as e:
@@ -295,7 +295,7 @@ def transpile_to_renpy(
                 else:
                     return
             try:
-                with open(json_path, "r", encoding="utf-8") as f:
+                with open(json_path, "r", encoding="utf-8", errors="replace") as f:
                     data = json.load(f)
                     if isinstance(data, list):
                         for item in data:
@@ -329,7 +329,7 @@ def transpile_to_renpy(
         # Check if MapInfos.json exists
         if os.path.exists(map_infos_path):
             try:
-                with open(map_infos_path, "r", encoding="utf-8") as map_infos_file:
+                with open(map_infos_path, "r", encoding="utf-8", errors="replace") as map_infos_file:
                     map_infos_list = json.load(map_infos_file)
                     # Convert list to dictionary with map_id as key
                     # MapInfos.json is a sparse array where index = map_id
@@ -383,7 +383,7 @@ def transpile_to_renpy(
             root_map_infos_path = os.path.join(".", "MapInfos.json")
             if root_map_infos_path != map_infos_path and os.path.exists(root_map_infos_path):
                 try:
-                    with open(root_map_infos_path, "r", encoding="utf-8") as map_infos_file:
+                    with open(root_map_infos_path, "r", encoding="utf-8", errors="replace") as map_infos_file:
                         map_infos_list = json.load(map_infos_file)
                         for map_info in map_infos_list:
                             if map_info is not None:
@@ -433,8 +433,12 @@ def transpile_to_renpy(
     for file_path in input_paths:
         # Open and parse the JSON file
         # UTF-8 encoding ensures international characters are handled correctly
-        with open(file_path, "r", encoding="utf-8") as json_file:
-            parsed_map_data = json.load(json_file)
+        try:
+            with open(file_path, "r", encoding="utf-8", errors="replace") as json_file:
+                parsed_map_data = json.load(json_file)
+        except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
+            print(f"[WARN] Skipping invalid JSON file: {file_path} ({e})")
+            continue
 
         # Extract the numeric map ID from the filename
         # RPG Maker uses the pattern "Map{ID}.json" (e.g., "Map001.json")
@@ -717,7 +721,7 @@ def transpile_to_renpy(
 
         if os.path.exists(common_events_path):
             try:
-                with open(common_events_path, "r", encoding="utf-8") as common_file:
+                with open(common_events_path, "r", encoding="utf-8", errors="replace") as common_file:
                     common_events_data = json.load(common_file)
 
                 # Run collection pass on common events
