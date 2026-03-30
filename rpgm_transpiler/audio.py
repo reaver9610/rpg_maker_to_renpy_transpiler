@@ -132,18 +132,14 @@ def generate_audio_rpy(
     output_lines.append("# Ren'Py's default channels (music, sound) are replaced with RPG Maker-style channels.")
     output_lines.append("init python:")
     indent = " " * indent_width
-    if collector.audio_bgm:
-        # BGM: Background music, loops by default, uses music mixer
-        output_lines.append(f'{indent}renpy.music.register_channel("bgm", mixer="music", loop=True)')
-    if collector.audio_bgs:
-        # BGS: Background sound (ambient), loops by default, uses sfx mixer
-        output_lines.append(f'{indent}renpy.music.register_channel("bgs", mixer="sfx", loop=True)')
-    if collector.audio_se:
-        # SE: Sound effects, one-shot (no loop), uses sfx mixer
-        output_lines.append(f'{indent}renpy.music.register_channel("se", mixer="sfx", loop=False)')
-    if collector.audio_me:
-        # ME: Music effects (stings/fanfares), one-shot, uses music mixer
-        output_lines.append(f'{indent}renpy.music.register_channel("me", mixer="music", loop=False)')
+    # BGM: Background music, loops by default, uses music mixer
+    output_lines.append(f'{indent}renpy.music.register_channel("bgm", mixer="music", loop=True)')
+    # BGS: Background sound (ambient), loops by default, uses sfx mixer
+    output_lines.append(f'{indent}renpy.music.register_channel("bgs", mixer="sfx", loop=True)')
+    # SE: Sound effects, one-shot (no loop), uses sfx mixer
+    output_lines.append(f'{indent}renpy.music.register_channel("se", mixer="sfx", loop=False)')
+    # ME: Music effects (stings/fanfares), one-shot, uses music mixer
+    output_lines.append(f'{indent}renpy.music.register_channel("me", mixer="music", loop=False)')
     output_lines.append("")
 
     # ── BGM (Background Music) ──
@@ -179,52 +175,6 @@ def generate_audio_rpy(
         for name in sorted(collector.audio_me):
             safe_name = safe_audio_var(name)
             output_lines.append(f'define audio.me_{safe_name} = "audio/me/{name}.{audio_ext}"')
-        output_lines.append("")
-
-    # Join all lines with interlines spacing
-    return join_with_interlines(output_lines, interlines)
-
-    # ── BGS Channel Registration Note ──
-    # Ren'Py has no default 'bgs' channel. If BGS audio is present, the user
-    # needs to register a custom channel. We emit a Python block for this.
-    if collector.audio_bgs:
-        output_lines.append("# ── BGS Channel Registration ──")
-        output_lines.append("# Ren'Py does not have a default 'bgs' channel.")
-        output_lines.append("# The following registers a custom channel for background sounds.")
-        output_lines.append("# Place this in a file that loads early (e.g., init.rpy) or keep it here.")
-        output_lines.append("init python:")
-        indent = " " * indent_width
-        output_lines.append(f"{indent}renpy.music.register_channel(\"bgs\", mixer=\"sfx\", loop=True)")
-        output_lines.append("")
-
-    # ── BGM (Background Music) ──
-    if collector.audio_bgm:
-        output_lines.append("# ── BGM (Background Music) ──")
-        for name in sorted(collector.audio_bgm):
-            # Bracket notation preserves original name with spaces
-            # e.g., define audio["bgm_Paths of Peril"] = "audio/bgm/Paths of Peril.ogg"
-            output_lines.append(f'define audio["bgm_{name}"] = "audio/bgm/{name}.{audio_ext}"')
-        output_lines.append("")
-
-    # ── BGS (Background Sound) ──
-    if collector.audio_bgs:
-        output_lines.append("# ── BGS (Background Sound) ──")
-        for name in sorted(collector.audio_bgs):
-            output_lines.append(f'define audio["bgs_{name}"] = "audio/bgs/{name}.{audio_ext}"')
-        output_lines.append("")
-
-    # ── SE (Sound Effects) ──
-    if collector.audio_se:
-        output_lines.append("# ── SE (Sound Effects) ──")
-        for name in sorted(collector.audio_se):
-            output_lines.append(f'define audio["se_{name}"] = "audio/se/{name}.{audio_ext}"')
-        output_lines.append("")
-
-    # ── ME (Music Effects) ──
-    if collector.audio_me:
-        output_lines.append("# ── ME (Music Effects) ──")
-        for name in sorted(collector.audio_me):
-            output_lines.append(f'define audio["me_{name}"] = "audio/me/{name}.{audio_ext}"')
         output_lines.append("")
 
     # Join all lines with interlines spacing

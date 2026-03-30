@@ -633,7 +633,7 @@ def transpile_to_renpy(
         base_path = os.path.join(full_folder_path, result.map_label_name)
 
         # ── Write map placeholder: map_{id}_{Name}.rpy ──
-        # Contains: label map_{id}_{Name}: call .autorun; return
+        # Contains: label map_{id}_{Name}: call map_{id}_{Name}.autorun; return
         _write_file(f"{base_path}.rpy", result.map_label)
 
         # ── Write event files into events subfolder ──

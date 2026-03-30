@@ -12,8 +12,8 @@ Each map has its own placeholder file that defines the global label::
 
     # maps/map_3_Refugee_Camp/map_3_Refugee_Camp.rpy
     label map_3_Refugee_Camp:
-        call .event_3_auto
-        call .event_39_roadblock_setup
+        call map_3_Refugee_Camp.event_3_auto
+        call map_3_Refugee_Camp.event_39_roadblock_setup
         return
 
     # maps/map_3_Refugee_Camp/map_3_Refugee_Camp_events/map_3_Refugee_Camp_event_3_auto.rpy

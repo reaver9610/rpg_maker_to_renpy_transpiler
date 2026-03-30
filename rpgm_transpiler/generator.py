@@ -433,7 +433,7 @@ class RenPyGenerator:
             >>> result.map_label_name
             'map_3_Refugee_Camp'
             >>> result.map_label
-            'label map_3_Refugee_Camp:\\n    call .event_3_auto\\n    return'
+            'label map_3_Refugee_Camp:\\n    call map_3_Refugee_Camp.event_3_auto\\n    return'
         """
         # Classify events into autorun and regular
         autorun_events, regular_events = self._classify_events()
@@ -528,7 +528,7 @@ class RenPyGenerator:
 
         Produces the global label that serves as the map's entry point.
         If autorun events exist, each one is called in sequence using
-        short-form local label references (``.event_X_name``).
+        fully qualified label references (``map_X_Name.event_X_name``).
 
         Output Example:
             # ═══════════════════════════════════════════════════
@@ -537,8 +537,8 @@ class RenPyGenerator:
             # ═══════════════════════════════════════════════════
 
             label map_3_Refugee_Camp:
-                call .event_3_auto
-                call .event_39_roadblock_setup
+                call map_3_Refugee_Camp.event_3_auto
+                call map_3_Refugee_Camp.event_39_roadblock_setup
                 return
 
         Args:
@@ -579,7 +579,7 @@ class RenPyGenerator:
             for event in autorun_events:
                 event_name = event.get("name", f"EV{event['id']:03d}")
                 label = safe_label(event_name, event["id"])
-                buf.append(f"    call .{label}")
+                buf.append(f"    call {self.map_label_name}.{label}")
 
         buf.append("    return")
         buf.append("")
