@@ -92,12 +92,14 @@ from .common_events import generate_common_events_rpy
 from .audio import generate_audio_rpy
 from .pictures import generate_pictures_rpy
 from .helpers import to_title_case, safe_map_label
+from .logger import TranspilerLogger
 
 __all__ = [
     "transpile_to_renpy",
     "DataCollector",
     "RenPyGenerator",
     "MapGenerationResult",
+    "TranspilerLogger",
     "generate_characters_rpy",
     "generate_side_images_rpy",
     "generate_global_switches_rpy",
@@ -123,6 +125,7 @@ def transpile_to_renpy(
     indent_width: int = 4,
     case_mode: dict[str, str] | None = None,
     audio_ext: str = "ogg",
+    logger: TranspilerLogger | None = None,
 ) -> None:
     """Transpile one or more RPG Maker MV JSON maps to Ren'Py .rpy scripts.
 
@@ -223,6 +226,11 @@ def transpile_to_renpy(
     # PHASE 0: Setup
     # ═══════════════════════════════════════════════════════════════════
 
+    # Use provided logger or create a default one
+    # The logger handles console output and file logging with timestamps
+    if logger is None:
+        logger = TranspilerLogger()
+
     # Ensure the output directory exists
     # exist_ok=True means no error if the directory already exists
     os.makedirs(output_dir, exist_ok=True)
@@ -239,54 +247,64 @@ def transpile_to_renpy(
     # Default: apply interlines to maps only
     if interlines_targets is None:
         interlines_targets = {"maps"} if interlines > 0 else set()
-    
+
     # Set default case_mode if not specified
     # Default: title case for variable names, title case for display names, lower for image tags
     if case_mode is None:
         case_mode = {"var": "title", "display": "title", "image": "lower"}
-    
+
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 0b: Load System.json if available
     # ═══════════════════════════════════════════════════════════════════
-    
+
     # Check for System.json in the same directory as the first input file
     # System.json contains switch/variable names for human-readable output
     if input_paths:
         # Get the directory of the first input file
         input_dir = os.path.dirname(input_paths[0]) or "."
         system_json_path = os.path.join(input_dir, "System.json")
-        
+
         # Check if System.json exists
         if os.path.exists(system_json_path):
             try:
-                with open(system_json_path, "r", encoding="utf-8", errors="replace") as system_file:
+                with open(
+                    system_json_path, "r", encoding="utf-8", errors="replace"
+                ) as system_file:
                     collector.system_data = json.load(system_file)
-                print(f"[INFO] Loaded System.json for switch/variable name resolution")
+                logger.info("Loaded System.json for switch/variable name resolution")
             except (json.JSONDecodeError, OSError) as e:
-                print(f"[WARN] Could not load System.json: {e}")
+                logger.warn(f"Could not load System.json: {e}")
         else:
             # Also check in the workspace root if input_dir is different
             root_system_path = os.path.join(".", "System.json")
-            if root_system_path != system_json_path and os.path.exists(root_system_path):
+            if root_system_path != system_json_path and os.path.exists(
+                root_system_path
+            ):
                 try:
-                    with open(root_system_path, "r", encoding="utf-8", errors="replace") as system_file:
+                    with open(
+                        root_system_path, "r", encoding="utf-8", errors="replace"
+                    ) as system_file:
                         collector.system_data = json.load(system_file)
-                    print(f"[INFO] Loaded System.json for switch/variable name resolution")
+                    logger.info(
+                        "Loaded System.json for switch/variable name resolution"
+                    )
                 except (json.JSONDecodeError, OSError) as e:
-                    print(f"[WARN] Could not load System.json: {e}")
+                    logger.warn(f"Could not load System.json: {e}")
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 0c: Load Items/Weapons/Armors.json if available
     # ═══════════════════════════════════════════════════════════════════
-    
+
     # Load item/weapon/armor names from JSON database files
     # These files contain arrays of objects with "id" and "name" fields
     # Also populates collector.item_ids/weapon_ids/armor_ids with ALL database IDs
     if input_paths:
         input_dir = os.path.dirname(input_paths[0]) or "."
-        
+
         # Helper to load JSON array and populate name dict and ID set
-        def load_json_names(filename: str, target_dict: dict[int, str], id_set: set[int] | None = None) -> None:
+        def load_json_names(
+            filename: str, target_dict: dict[int, str], id_set: set[int] | None = None
+        ) -> None:
             json_path = os.path.join(input_dir, filename)
             if not os.path.exists(json_path):
                 # Also check workspace root
@@ -300,18 +318,22 @@ def transpile_to_renpy(
                     data = json.load(f)
                     if isinstance(data, list):
                         for item in data:
-                            if isinstance(item, dict) and "id" in item and "name" in item:
+                            if (
+                                isinstance(item, dict)
+                                and "id" in item
+                                and "name" in item
+                            ):
                                 item_id = item["id"]
                                 item_name = item["name"]
                                 target_dict[item_id] = item_name
                                 if id_set is not None:
                                     id_set.add(item_id)
-                        print(f"[INFO] Loaded {len(target_dict)} names from {filename}")
+                        logger.info(f"Loaded {len(target_dict)} names from {filename}")
                         if id_set is not None:
-                            print(f"[INFO] Added {len(id_set)} IDs from {filename}")
+                            logger.info(f"Added {len(id_set)} IDs from {filename}")
             except (json.JSONDecodeError, OSError) as e:
-                print(f"[WARN] Could not load {filename}: {e}")
-        
+                logger.warn(f"Could not load {filename}: {e}")
+
         # Load each database file and populate both names and IDs
         load_json_names("Items.json", collector.item_names, collector.item_ids)
         load_json_names("Weapons.json", collector.weapon_names, collector.weapon_ids)
@@ -320,21 +342,23 @@ def transpile_to_renpy(
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 0d: Load MapInfos.json if available
     # ═══════════════════════════════════════════════════════════════════
-    
+
     # MapInfos.json contains map hierarchy information (parent-child relationships)
     # This is used to create a hierarchical folder structure for map files
     map_infos: dict[int, dict] = {}  # map_id -> {name, parentId, order}
     map_folder_paths: dict[int, str] = {}  # map_id -> folder path
-    
+
     # Check for MapInfos.json in the same directory as the first input file
     if input_paths:
         input_dir = os.path.dirname(input_paths[0]) or "."
         map_infos_path = os.path.join(input_dir, "MapInfos.json")
-        
+
         # Check if MapInfos.json exists
         if os.path.exists(map_infos_path):
             try:
-                with open(map_infos_path, "r", encoding="utf-8", errors="replace") as map_infos_file:
+                with open(
+                    map_infos_path, "r", encoding="utf-8", errors="replace"
+                ) as map_infos_file:
                     map_infos_list = json.load(map_infos_file)
                     # Convert list to dictionary with map_id as key
                     # MapInfos.json is a sparse array where index = map_id
@@ -346,49 +370,62 @@ def transpile_to_renpy(
                                 map_infos[map_id] = {
                                     "name": map_info.get("name", f"map_{map_id}"),
                                     "parentId": map_info.get("parentId", 0),
-                                    "order": map_info.get("order", 0)
+                                    "order": map_info.get("order", 0),
                                 }
-                    print(f"[INFO] Loaded MapInfos.json with {len(map_infos)} maps for hierarchical folder structure")
-                    
+                    logger.info(
+                        f"Loaded MapInfos.json with {len(map_infos)} maps for hierarchical folder structure"
+                    )
+
                     # Build folder paths for each map
                     from .helpers import to_title_case, safe_var
+
                     def get_folder_path(map_id: int) -> str:
                         """Recursively build folder path from map hierarchy."""
                         if map_id in map_folder_paths:
                             return map_folder_paths[map_id]
-                        
+
                         if map_id not in map_infos:
                             # Map not found in MapInfos, use default
                             map_folder_paths[map_id] = f"map_{map_id}"
                             return map_folder_paths[map_id]
-                        
+
                         map_info = map_infos[map_id]
                         parent_id = map_info["parentId"]
-                        
+
                         if parent_id == 0 or parent_id not in map_infos:
                             # Root map or parent not in MapInfos
-                            folder_name = f"map_{map_id}_{to_title_case(map_info['name'])}"
+                            folder_name = (
+                                f"map_{map_id}_{to_title_case(map_info['name'])}"
+                            )
                             map_folder_paths[map_id] = folder_name
                         else:
                             # Child map - get parent path and append
                             parent_path = get_folder_path(parent_id)
-                            folder_name = f"map_{map_id}_{to_title_case(map_info['name'])}"
-                            map_folder_paths[map_id] = os.path.join(parent_path, folder_name)
-                        
+                            folder_name = (
+                                f"map_{map_id}_{to_title_case(map_info['name'])}"
+                            )
+                            map_folder_paths[map_id] = os.path.join(
+                                parent_path, folder_name
+                            )
+
                         return map_folder_paths[map_id]
-                    
+
                     # Build paths for all maps
                     for map_id in map_infos:
                         get_folder_path(map_id)
-                    
+
             except (json.JSONDecodeError, OSError) as e:
-                print(f"[WARN] Could not load MapInfos.json: {e}")
+                logger.warn(f"Could not load MapInfos.json: {e}")
         else:
             # Also check in the workspace root if input_dir is different
             root_map_infos_path = os.path.join(".", "MapInfos.json")
-            if root_map_infos_path != map_infos_path and os.path.exists(root_map_infos_path):
+            if root_map_infos_path != map_infos_path and os.path.exists(
+                root_map_infos_path
+            ):
                 try:
-                    with open(root_map_infos_path, "r", encoding="utf-8", errors="replace") as map_infos_file:
+                    with open(
+                        root_map_infos_path, "r", encoding="utf-8", errors="replace"
+                    ) as map_infos_file:
                         map_infos_list = json.load(map_infos_file)
                         for map_info in map_infos_list:
                             if map_info is not None:
@@ -397,44 +434,53 @@ def transpile_to_renpy(
                                     map_infos[map_id] = {
                                         "name": map_info.get("name", f"map_{map_id}"),
                                         "parentId": map_info.get("parentId", 0),
-                                        "order": map_info.get("order", 0)
+                                        "order": map_info.get("order", 0),
                                     }
-                        print(f"[INFO] Loaded MapInfos.json with {len(map_infos)} maps for hierarchical folder structure")
-                        
+                        logger.info(
+                            f"Loaded MapInfos.json with {len(map_infos)} maps for hierarchical folder structure"
+                        )
+
                         # Build folder paths for each map
                         from .helpers import to_title_case, safe_var
+
                         def get_folder_path(map_id: int) -> str:
                             """Recursively build folder path from map hierarchy."""
                             if map_id in map_folder_paths:
                                 return map_folder_paths[map_id]
-                            
+
                             if map_id not in map_infos:
                                 map_folder_paths[map_id] = f"map_{map_id}"
                                 return map_folder_paths[map_id]
-                            
+
                             map_info = map_infos[map_id]
                             parent_id = map_info["parentId"]
-                            
+
                             if parent_id == 0 or parent_id not in map_infos:
-                                folder_name = f"map_{map_id}_{to_title_case(map_info['name'])}"
+                                folder_name = (
+                                    f"map_{map_id}_{to_title_case(map_info['name'])}"
+                                )
                                 map_folder_paths[map_id] = folder_name
                             else:
                                 parent_path = get_folder_path(parent_id)
-                                folder_name = f"map_{map_id}_{to_title_case(map_info['name'])}"
-                                map_folder_paths[map_id] = os.path.join(parent_path, folder_name)
-                            
+                                folder_name = (
+                                    f"map_{map_id}_{to_title_case(map_info['name'])}"
+                                )
+                                map_folder_paths[map_id] = os.path.join(
+                                    parent_path, folder_name
+                                )
+
                             return map_folder_paths[map_id]
-                        
+
                         for map_id in map_infos:
                             get_folder_path(map_id)
-                        
+
                 except (json.JSONDecodeError, OSError) as e:
-                    print(f"[WARN] Could not load MapInfos.json: {e}")
+                    logger.warn(f"Could not load MapInfos.json: {e}")
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 1: Load JSON files and run data collection
     # ═══════════════════════════════════════════════════════════════════
-    
+
     for file_path in input_paths:
         # Open and parse the JSON file
         # UTF-8 encoding ensures international characters are handled correctly
@@ -442,7 +488,7 @@ def transpile_to_renpy(
             with open(file_path, "r", encoding="utf-8", errors="replace") as json_file:
                 parsed_map_data = json.load(json_file)
         except (json.JSONDecodeError, UnicodeDecodeError, ValueError) as e:
-            print(f"[WARN] Skipping invalid JSON file: {file_path} ({e})")
+            logger.warn(f"Skipping invalid JSON file: {file_path} ({e})")
             continue
 
         # Extract the numeric map ID from the filename
@@ -450,7 +496,7 @@ def transpile_to_renpy(
         # We use a regex to extract the digits
         filename_stem = Path(file_path).stem  # "Map001" from "Map001.json"
         map_id_match = re.search(r"(\d+)", filename_stem)  # Match digits
-        
+
         # Determine the map ID
         if map_id_match:
             # Extract digits from filename: "Map001" → 1
@@ -462,113 +508,153 @@ def transpile_to_renpy(
 
         # Store the parsed map data for later use
         all_map_data[map_id] = parsed_map_data
-        
+
         # Run the collection pass on this map
         # This discovers all characters, switches, variables, etc.
         collector.collect_from_map(parsed_map_data, map_id)
 
     # ── Log collection summary ──
     # Provide feedback about what was discovered
-    total_self_switches = sum(len(channels) for ev_switches in collector.self_switches.values() for channels in ev_switches.values())
-    print(f"[INFO] Collected from {len(all_map_data)} maps:")
-    print(f"    {len(collector.characters)} characters")
-    print(f"    {len(collector.switch_ids)} switches")
-    print(f"    {len(collector.variable_ids)} variables")
-    print(f"    {total_self_switches} self-switches across {len(collector.self_switches)} maps")
-    print(f"    {len(collector.picture_filenames)} pictures")
-    print()
+    total_self_switches = sum(
+        len(channels)
+        for ev_switches in collector.self_switches.values()
+        for channels in ev_switches.values()
+    )
+    logger.info(f"Collected from {len(all_map_data)} maps:")
+    logger.info(f"    {len(collector.characters)} characters")
+    logger.info(f"    {len(collector.switch_ids)} switches")
+    logger.info(f"    {len(collector.variable_ids)} variables")
+    logger.info(
+        f"    {total_self_switches} self-switches across {len(collector.self_switches)} maps"
+    )
+    logger.info(f"    {len(collector.picture_filenames)} pictures")
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 2: Generate characters.rpy
     # ═══════════════════════════════════════════════════════════════════
-    
+
     # Generate the character definitions
     character_interlines = interlines if "characters" in interlines_targets else 0
-    character_definitions = generate_characters_rpy(collector, interlines=character_interlines, indent_width=indent_width, case_mode=case_mode)
-    
+    character_definitions = generate_characters_rpy(
+        collector,
+        interlines=character_interlines,
+        indent_width=indent_width,
+        case_mode=case_mode,
+    )
+
     # Build the output file path
     characters_path = os.path.join(output_dir, "characters.rpy")
-    
+
     # Write the file
     with open(characters_path, "w", encoding="utf-8") as output_file:
         output_file.write(character_definitions)
-    
+
     # Log success
-    print(f"[OK] {characters_path}")
+    logger.ok(characters_path)
+    logger.track_file_written()
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 3a: Generate global_switches.rpy (game_switch store)
     # ═══════════════════════════════════════════════════════════════════
-    
-    global_switches_interlines = interlines if "global_switches" in interlines_targets else 0
-    global_switches_src = generate_global_switches_rpy(collector, interlines=global_switches_interlines, indent_width=indent_width)
+
+    global_switches_interlines = (
+        interlines if "global_switches" in interlines_targets else 0
+    )
+    global_switches_src = generate_global_switches_rpy(
+        collector, interlines=global_switches_interlines, indent_width=indent_width
+    )
     global_switches_path = os.path.join(output_dir, "global_switches.rpy")
     with open(global_switches_path, "w", encoding="utf-8") as output_file:
         output_file.write(global_switches_src)
-    print(f"[OK] {global_switches_path}")
+    logger.ok(global_switches_path)
+    logger.track_file_written()
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 3b: Generate global_variables.rpy (game_vars store)
     # ═══════════════════════════════════════════════════════════════════
-    
-    global_variables_interlines = interlines if "global_variables" in interlines_targets else 0
-    global_variables_src = generate_global_variables_rpy(collector, interlines=global_variables_interlines, indent_width=indent_width)
+
+    global_variables_interlines = (
+        interlines if "global_variables" in interlines_targets else 0
+    )
+    global_variables_src = generate_global_variables_rpy(
+        collector, interlines=global_variables_interlines, indent_width=indent_width
+    )
     global_variables_path = os.path.join(output_dir, "global_variables.rpy")
     with open(global_variables_path, "w", encoding="utf-8") as output_file:
         output_file.write(global_variables_src)
-    print(f"[OK] {global_variables_path}")
+    logger.ok(global_variables_path)
+    logger.track_file_written()
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 3c: Generate global_items.rpy (game_items store)
     # ═══════════════════════════════════════════════════════════════════
-    
+
     global_items_interlines = interlines if "global_items" in interlines_targets else 0
-    global_items_src = generate_global_items_rpy(collector, interlines=global_items_interlines, indent_width=indent_width)
+    global_items_src = generate_global_items_rpy(
+        collector, interlines=global_items_interlines, indent_width=indent_width
+    )
     if global_items_src:
         global_items_path = os.path.join(output_dir, "global_items.rpy")
         with open(global_items_path, "w", encoding="utf-8") as output_file:
             output_file.write(global_items_src)
-        print(f"[OK] {global_items_path}")
+        logger.ok(global_items_path)
+        logger.track_file_written()
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 3d: Generate global_economy.rpy (game_economy store)
     # ═══════════════════════════════════════════════════════════════════
-    
-    global_economy_interlines = interlines if "global_economy" in interlines_targets else 0
-    global_economy_src = generate_global_economy_rpy(interlines=global_economy_interlines, indent_width=indent_width)
+
+    global_economy_interlines = (
+        interlines if "global_economy" in interlines_targets else 0
+    )
+    global_economy_src = generate_global_economy_rpy(
+        interlines=global_economy_interlines, indent_width=indent_width
+    )
     global_economy_path = os.path.join(output_dir, "global_economy.rpy")
     with open(global_economy_path, "w", encoding="utf-8") as output_file:
         output_file.write(global_economy_src)
-    print(f"[OK] {global_economy_path}")
+    logger.ok(global_economy_path)
+    logger.track_file_written()
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 3e: Generate global_quests.rpy (game_quest store)
     # ═══════════════════════════════════════════════════════════════════
-    
-    global_quests_interlines = interlines if "global_quests" in interlines_targets else 0
-    global_quests_src = generate_global_quests_rpy(interlines=global_quests_interlines, indent_width=indent_width)
+
+    global_quests_interlines = (
+        interlines if "global_quests" in interlines_targets else 0
+    )
+    global_quests_src = generate_global_quests_rpy(
+        interlines=global_quests_interlines, indent_width=indent_width
+    )
     global_quests_path = os.path.join(output_dir, "global_quests.rpy")
     with open(global_quests_path, "w", encoding="utf-8") as output_file:
         output_file.write(global_quests_src)
-    print(f"[OK] {global_quests_path}")
+    logger.ok(global_quests_path)
+    logger.track_file_written()
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 4: Generate side_images.rpy (side image declarations)
     # ═══════════════════════════════════════════════════════════════════
-    
+
     # Generate the side image declarations
     side_images_interlines = interlines if "side_images" in interlines_targets else 0
-    side_images_definitions = generate_side_images_rpy(collector, interlines=side_images_interlines, indent_width=indent_width, case_mode=case_mode)
-    
+    side_images_definitions = generate_side_images_rpy(
+        collector,
+        interlines=side_images_interlines,
+        indent_width=indent_width,
+        case_mode=case_mode,
+    )
+
     # Build the output file path
     side_images_path = os.path.join(output_dir, "side_images.rpy")
-    
+
     # Write the file
     with open(side_images_path, "w", encoding="utf-8") as output_file:
         output_file.write(side_images_definitions)
-    
+
     # Log success
-    print(f"[OK] {side_images_path}")
+    logger.ok(side_images_path)
+    logger.track_file_written()
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 4b: Generate audio.rpy (audio asset definitions)
@@ -576,7 +662,12 @@ def transpile_to_renpy(
 
     # Generate the audio definitions file
     audio_interlines = interlines if "audio" in interlines_targets else 0
-    audio_definitions = generate_audio_rpy(collector, audio_ext=audio_ext, interlines=audio_interlines, indent_width=indent_width)
+    audio_definitions = generate_audio_rpy(
+        collector,
+        audio_ext=audio_ext,
+        interlines=audio_interlines,
+        indent_width=indent_width,
+    )
 
     # Build the output file path
     audio_path = os.path.join(output_dir, "audio.rpy")
@@ -586,7 +677,8 @@ def transpile_to_renpy(
         output_file.write(audio_definitions)
 
     # Log success
-    print(f"[OK] {audio_path}")
+    logger.ok(audio_path)
+    logger.track_file_written()
 
     # Create the audio directory structure for user to place audio files
     # These directories mirror the RPG Maker MV audio folder layout
@@ -600,14 +692,17 @@ def transpile_to_renpy(
 
     # Generate the pictures definitions file
     pictures_interlines = interlines if "pictures" in interlines_targets else 0
-    pictures_src = generate_pictures_rpy(collector, interlines=pictures_interlines, indent_width=indent_width)
+    pictures_src = generate_pictures_rpy(
+        collector, interlines=pictures_interlines, indent_width=indent_width
+    )
 
     # Only write the file if there are pictures to define
     if pictures_src:
         pictures_path = os.path.join(output_dir, "pictures.rpy")
         with open(pictures_path, "w", encoding="utf-8") as output_file:
             output_file.write(pictures_src)
-        print(f"[OK] {pictures_path}")
+        logger.ok(pictures_path)
+        logger.track_file_written()
 
         # Create the img/pictures directory for user to place image files
         # These mirror the RPG Maker MV img/pictures/ folder layout
@@ -626,10 +721,11 @@ def transpile_to_renpy(
 
     # Helper to write a file and log it
     def _write_file(path: str, content: str) -> None:
-        """Write content to a file and print a success message."""
+        """Write content to a file and log a success message."""
         with open(path, "w", encoding="utf-8") as f:
             f.write(content)
-        print(f"[OK] {path}")
+        logger.ok(path)
+        logger.track_file_written()
 
     for map_id, map_data in sorted(all_map_data.items()):
         # Resolve the human-readable map name for this map
@@ -638,8 +734,12 @@ def transpile_to_renpy(
 
         # Create a generator instance for this map
         generator = RenPyGenerator(
-            map_data, collector, map_id, all_map_data,
-            multiline=multiline, interlines=map_interlines,
+            map_data,
+            collector,
+            map_id,
+            all_map_data,
+            multiline=multiline,
+            interlines=map_interlines,
             map_name=map_name_for_header,
             indent_width=indent_width,
             audio_ext=audio_ext,
@@ -647,6 +747,15 @@ def transpile_to_renpy(
 
         # Generate split output: map placeholder, autorun files, event files
         result = generator.generate()
+
+        # Track this map in statistics
+        logger.track_map()
+
+        # Track generated events
+        for _ in result.autorun:
+            logger.track_event(is_autorun=True)
+        for _ in result.events:
+            logger.track_event(is_autorun=False)
 
         # ── Determine output directory for this map ──
         if map_id in map_folder_paths:
@@ -671,47 +780,75 @@ def transpile_to_renpy(
         # ── Write event files into events subfolder ──
         # Each event gets its own subfolder with the event script and switch declarations
         if result.autorun or result.events:
-            events_dir = os.path.join(full_folder_path, f"{result.map_label_name}_events")
+            events_dir = os.path.join(
+                full_folder_path, f"{result.map_label_name}_events"
+            )
             os.makedirs(events_dir, exist_ok=True)
 
-            map_name_raw = map_name_for_header or map_data.get("displayName", f"Map{map_id}")
+            map_name_raw = map_name_for_header or map_data.get(
+                "displayName", f"Map{map_id}"
+            )
 
             # Write autorun event files
             # Each autorun gets: subfolder/event_script.rpy + subfolder/event_switches.rpy
             for event_id, (source, filename_suffix) in result.autorun.items():
-                event_subdir = os.path.join(events_dir, f"{result.map_label_name}_{filename_suffix}")
+                event_subdir = os.path.join(
+                    events_dir, f"{result.map_label_name}_{filename_suffix}"
+                )
                 os.makedirs(event_subdir, exist_ok=True)
 
                 # Write event script: map_{id}_{Name}_{event_label}.rpy
-                event_file = os.path.join(event_subdir, f"{result.map_label_name}_{filename_suffix}.rpy")
+                event_file = os.path.join(
+                    event_subdir, f"{result.map_label_name}_{filename_suffix}.rpy"
+                )
                 _write_file(event_file, source)
 
                 # Write per-event self-switch declarations (skipped if no switches)
                 event_switches_src = generate_event_switches_rpy(
-                    collector, map_id, event_id, map_name_raw, filename_suffix,
-                    interlines=map_interlines, indent_width=indent_width,
+                    collector,
+                    map_id,
+                    event_id,
+                    map_name_raw,
+                    filename_suffix,
+                    interlines=map_interlines,
+                    indent_width=indent_width,
                 )
                 if event_switches_src:
-                    switches_file = os.path.join(event_subdir, f"{result.map_label_name}_{filename_suffix}_switches.rpy")
+                    switches_file = os.path.join(
+                        event_subdir,
+                        f"{result.map_label_name}_{filename_suffix}_switches.rpy",
+                    )
                     _write_file(switches_file, event_switches_src)
 
             # Write regular event files
             # Each event gets: subfolder/event_script.rpy + subfolder/event_switches.rpy
             for event_id, (source, filename_suffix) in result.events.items():
-                event_subdir = os.path.join(events_dir, f"{result.map_label_name}_{filename_suffix}")
+                event_subdir = os.path.join(
+                    events_dir, f"{result.map_label_name}_{filename_suffix}"
+                )
                 os.makedirs(event_subdir, exist_ok=True)
 
                 # Write event script: map_{id}_{Name}_{event_label}.rpy
-                event_file = os.path.join(event_subdir, f"{result.map_label_name}_{filename_suffix}.rpy")
+                event_file = os.path.join(
+                    event_subdir, f"{result.map_label_name}_{filename_suffix}.rpy"
+                )
                 _write_file(event_file, source)
 
                 # Write per-event self-switch declarations (skipped if no switches)
                 event_switches_src = generate_event_switches_rpy(
-                    collector, map_id, event_id, map_name_raw, filename_suffix,
-                    interlines=map_interlines, indent_width=indent_width,
+                    collector,
+                    map_id,
+                    event_id,
+                    map_name_raw,
+                    filename_suffix,
+                    interlines=map_interlines,
+                    indent_width=indent_width,
                 )
                 if event_switches_src:
-                    switches_file = os.path.join(event_subdir, f"{result.map_label_name}_{filename_suffix}_switches.rpy")
+                    switches_file = os.path.join(
+                        event_subdir,
+                        f"{result.map_label_name}_{filename_suffix}_switches.rpy",
+                    )
                     _write_file(switches_file, event_switches_src)
 
     # ═══════════════════════════════════════════════════════════════════
@@ -726,7 +863,9 @@ def transpile_to_renpy(
 
         if os.path.exists(common_events_path):
             try:
-                with open(common_events_path, "r", encoding="utf-8", errors="replace") as common_file:
+                with open(
+                    common_events_path, "r", encoding="utf-8", errors="replace"
+                ) as common_file:
                     common_events_data = json.load(common_file)
 
                 # Run collection pass on common events
@@ -735,13 +874,17 @@ def transpile_to_renpy(
 
                 # Log collection from common events
                 common_event_count = sum(1 for e in common_events_data if e is not None)
-                print(f"[INFO] Collected from {common_event_count} common events")
+                logger.info(f"Collected from {common_event_count} common events")
 
                 # Generate per-event .rpy files
-                common_events_interlines = interlines if "common_events" in interlines_targets else 0
+                common_events_interlines = (
+                    interlines if "common_events" in interlines_targets else 0
+                )
                 common_events_result = generate_common_events_rpy(
-                    common_events_data, collector,
-                    multiline=multiline, interlines=common_events_interlines,
+                    common_events_data,
+                    collector,
+                    multiline=multiline,
+                    interlines=common_events_interlines,
                     indent_width=indent_width,
                 )
 
@@ -750,7 +893,9 @@ def transpile_to_renpy(
                     common_events_dir = os.path.join(output_dir, "common_events")
                     os.makedirs(common_events_dir, exist_ok=True)
 
-                    for event_id, (source, label) in sorted(common_events_result.items()):
+                    for event_id, (source, label) in sorted(
+                        common_events_result.items()
+                    ):
                         # Create subfolder: common_events/common_event_{id}_{name}/
                         event_subdir = os.path.join(common_events_dir, label)
                         os.makedirs(event_subdir, exist_ok=True)
@@ -758,13 +903,18 @@ def transpile_to_renpy(
                         # Write the event file
                         event_file = os.path.join(event_subdir, f"{label}.rpy")
                         _write_file(event_file, source)
+                        logger.track_common_event()
 
-                    print(f"[INFO] Generated {len(common_events_result)} common event files")
+                    logger.info(
+                        f"Generated {len(common_events_result)} common event files"
+                    )
 
             except (json.JSONDecodeError, OSError) as e:
-                print(f"[WARN] Could not load CommonEvents.json: {e}")
+                logger.warn(f"Could not load CommonEvents.json: {e}")
         else:
-            print(f"[INFO] No CommonEvents.json found in {input_dir}, skipping common events")
+            logger.info(
+                f"No CommonEvents.json found in {input_dir}, skipping common events"
+            )
 
     # ═══════════════════════════════════════════════════════════════════
     # PHASE 6: Generate game_flow.rpy (navigation labels)
@@ -773,21 +923,28 @@ def transpile_to_renpy(
     # Generate the game flow navigation
     # Apply interlines only if "game_flow" is in targets
     game_flow_interlines = interlines if "game_flow" in interlines_targets else 0
-    game_flow_source = generate_game_flow_rpy(all_map_data, collector, interlines=game_flow_interlines, indent_width=indent_width)
-    
+    game_flow_source = generate_game_flow_rpy(
+        all_map_data,
+        collector,
+        interlines=game_flow_interlines,
+        indent_width=indent_width,
+    )
+
     # Build the output file path
     game_flow_path = os.path.join(output_dir, "game_flow.rpy")
-    
+
     # Write the file
     with open(game_flow_path, "w", encoding="utf-8") as output_file:
         output_file.write(game_flow_source)
-    
+
     # Log success
-    print(f"[OK] {game_flow_path}")
+    logger.ok(game_flow_path)
+    logger.track_file_written()
 
     # ═══════════════════════════════════════════════════════════════════
     # COMPLETION
     # ═══════════════════════════════════════════════════════════════════
-    
-    # Log completion summary
-    print(f"\n[DONE] Transpiled {len(all_map_data)} maps to {output_dir}/")
+
+    # Finalize the log file (write all buffered entries to disk)
+    log_path = logger.finalize()
+    logger.info(f"Log file written to {log_path}")

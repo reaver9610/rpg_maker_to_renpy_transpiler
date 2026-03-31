@@ -199,6 +199,10 @@ rpgm-transpile -i --file inputs/Map001.json -f --multiline
   - `--lower-image` - Lowercase image tags [default]
   - `--title-image` - Title case image tags
   - `--upper-image` - Uppercase image tags
+- `-v, --verbose` - Verbosity level (use with one of the following sub-options):
+  - `--full` - Show all output: INFO, OK, and WARN messages [default]
+  - `--warn` - Show only warnings and errors (suppress INFO and OK messages)
+  - Bare `-v` (no subflag) defaults to `--full`
 
 Output goes to `outputs/` by default.
 

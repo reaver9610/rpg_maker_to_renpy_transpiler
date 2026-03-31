@@ -32,6 +32,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from rpgm_transpiler import transpile_to_renpy
+from rpgm_transpiler.logger import TranspilerLogger
 
 
 class InputAction(argparse.Action):
@@ -100,6 +101,23 @@ class CaseAction(argparse.Action):
         setattr(namespace, self.dest, True)
 
 
+class VerboseAction(argparse.Action):
+    """Custom action to handle -v with sub-flags (--all, --warn)."""
+
+    def __init__(self, option_strings: list[str], dest: str, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, **kwargs)
+
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: str | Sequence[Any] | None,
+        option_string: str | None = None,
+    ):
+        """Mark that verbose mode is specified; actual parsing happens in custom logic."""
+        setattr(namespace, self.dest, True)
+
+
 def parse_args() -> argparse.Namespace:
     """Parse and return CLI arguments for the transpiler.
 
@@ -116,77 +134,86 @@ def parse_args() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         usage=(
             "rpgm-transpile -i (--file FILE | --multiple FILES... | --directory DIR | --regex PATTERN)\n"
-            " [-o OUTPUT_DIR] [-n N] [-f (--single | --multiline)]"
+            " [-o OUTPUT_DIR] [-n N] [-f (--single | --multiline)] [-v (--full | --warn)]"
         ),
     )
 
     # Input flag - required marker, actual sub-flag parsed manually
     argument_parser.add_argument(
-        "-i", "--input",
+        "-i",
+        "--input",
         action=InputAction,
         dest="input_required",
-        help="Input source (required) - use with --file, --multiple, --directory, or --regex"
+        help="Input source (required) - use with --file, --multiple, --directory, or --regex",
     )
 
     # Register input sub-flags as optional arguments (parsed manually)
     argument_parser.add_argument(
-        "--file", "-file",
+        "--file",
+        "-file",
         metavar="FILE",
         dest="file",
-        help="Transpile a single file (use with -i)"
+        help="Transpile a single file (use with -i)",
     )
     argument_parser.add_argument(
-        "--multiple", "-multiple",
+        "--multiple",
+        "-multiple",
         metavar="FILES",
         nargs="+",
         dest="multiple",
-        help="Transpile multiple files (use with -i)"
+        help="Transpile multiple files (use with -i)",
     )
     argument_parser.add_argument(
-        "--directory", "-directory",
+        "--directory",
+        "-directory",
         metavar="DIR",
         dest="directory",
-        help="Transpile all .json files in a directory (use with -i)"
+        help="Transpile all .json files in a directory (use with -i)",
     )
     argument_parser.add_argument(
-        "--regex", "-regex",
+        "--regex",
+        "-regex",
         metavar="PATTERN",
         dest="regex",
-        help="Transpile files matching a glob pattern (use with -i)"
+        help="Transpile files matching a glob pattern (use with -i)",
     )
 
     # Output directory option (defaults to "outputs")
     argument_parser.add_argument(
-        "-o", "--output",
+        "-o",
+        "--output",
         metavar="OUTPUT_DIR",
         default="outputs",
-        help="Output directory for generated .rpy files (default: outputs)"
+        help="Output directory for generated .rpy files (default: outputs)",
     )
 
     # Indent width option
     argument_parser.add_argument(
-        "-s", "--indent-width",
+        "-s",
+        "--indent-width",
         metavar="N",
         type=int,
         default=4,
-        help="Number of spaces per indentation level (default: 4)"
+        help="Number of spaces per indentation level (default: 4)",
     )
 
     # Audio file extension option
     argument_parser.add_argument(
-        "-a", "--audio-ext",
+        "-a",
+        "--audio-ext",
         metavar="EXT",
         choices=["ogg", "opus", "mp3", "mp2", "flac", "wav"],
         default="ogg",
-        help="Audio file extension for generated references (default: ogg). Supported: ogg, opus, mp3, mp2, flac, wav"
+        help="Audio file extension for generated references (default: ogg). Supported: ogg, opus, mp3, mp2, flac, wav",
     )
 
     # Case flag - parsed manually for --lower/--title/--upper and their variants
     argument_parser.add_argument(
-        "-c", "--case",
+        "-c",
+        "--case",
         action=CaseAction,
         dest="case_specified",
-        help="Character name casing options (--lower, --title, --upper)"
+        help="Character name casing options (--lower, --title, --upper)",
     )
 
     # Case sub-flags for variable name
@@ -195,21 +222,21 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         dest="case_lower",
         default=False,
-        help="Use lowercase for variable names (e.g., claire)"
+        help="Use lowercase for variable names (e.g., claire)",
     )
     argument_parser.add_argument(
         "--title",
         action="store_true",
         dest="case_title",
         default=False,
-        help="Use title case for variable names (e.g., Claire) [default]"
+        help="Use title case for variable names (e.g., Claire) [default]",
     )
     argument_parser.add_argument(
         "--upper",
         action="store_true",
         dest="case_upper",
         default=False,
-        help="Use uppercase for variable names (e.g., CLAIRE)"
+        help="Use uppercase for variable names (e.g., CLAIRE)",
     )
 
     # Case sub-flags for display name
@@ -218,21 +245,21 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         dest="case_lower_display",
         default=False,
-        help="Use lowercase for display names"
+        help="Use lowercase for display names",
     )
     argument_parser.add_argument(
         "--title-display",
         action="store_true",
         dest="case_title_display",
         default=False,
-        help="Use title case for display names [default]"
+        help="Use title case for display names [default]",
     )
     argument_parser.add_argument(
         "--upper-display",
         action="store_true",
         dest="case_upper_display",
         default=False,
-        help="Use uppercase for display names"
+        help="Use uppercase for display names",
     )
 
     # Case sub-flags for image tag
@@ -241,30 +268,56 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         dest="case_lower_image",
         default=False,
-        help="Use lowercase for image tags [default]"
+        help="Use lowercase for image tags [default]",
     )
     argument_parser.add_argument(
         "--title-image",
         action="store_true",
         dest="case_title_image",
         default=False,
-        help="Use title case for image tags"
+        help="Use title case for image tags",
     )
     argument_parser.add_argument(
         "--upper-image",
         action="store_true",
         dest="case_upper_image",
         default=False,
-        help="Use uppercase for image tags"
+        help="Use uppercase for image tags",
+    )
+
+    # Verbose flag - parsed manually for --full/--warn sub-options
+    argument_parser.add_argument(
+        "-v",
+        "--verbose",
+        action=VerboseAction,
+        dest="verbose_specified",
+        help="Verbosity level (--full to show all output, --warn to show only warnings)",
+    )
+
+    # Verbose sub-flags
+    argument_parser.add_argument(
+        "--full",
+        action="store_true",
+        dest="verbose_all",
+        default=False,
+        help="Show all output: INFO, OK, and WARN messages [default]",
+    )
+    argument_parser.add_argument(
+        "--warn",
+        action="store_true",
+        dest="verbose_warn",
+        default=False,
+        help="Show only warnings and errors (suppress INFO and OK messages)",
     )
 
     # Interlines option (number of blank lines between each output line)
     argument_parser.add_argument(
-        "-n", "--interlines",
+        "-n",
+        "--interlines",
         metavar="N",
         type=int,
         default=0,
-        help="Number of blank lines between each line in output (default: 0)"
+        help="Number of blank lines between each line in output (default: 0)",
     )
 
     # Interlines target flags (which files to apply interlines to)
@@ -273,99 +326,100 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         dest="interlines_maps",
         default=False,
-        help="Apply interlines to map files (default when -n is used)"
+        help="Apply interlines to map files (default when -n is used)",
     )
     argument_parser.add_argument(
         "--characters",
         action="store_true",
         dest="interlines_characters",
         default=False,
-        help="Apply interlines to characters.rpy"
+        help="Apply interlines to characters.rpy",
     )
     argument_parser.add_argument(
         "--global-switches",
         action="store_true",
         dest="interlines_global_switches",
         default=False,
-        help="Apply interlines to global_switches.rpy"
+        help="Apply interlines to global_switches.rpy",
     )
     argument_parser.add_argument(
         "--global-variables",
         action="store_true",
         dest="interlines_global_variables",
         default=False,
-        help="Apply interlines to global_variables.rpy"
+        help="Apply interlines to global_variables.rpy",
     )
     argument_parser.add_argument(
         "--global-items",
         action="store_true",
         dest="interlines_global_items",
         default=False,
-        help="Apply interlines to global_items.rpy"
+        help="Apply interlines to global_items.rpy",
     )
     argument_parser.add_argument(
         "--global-economy",
         action="store_true",
         dest="interlines_global_economy",
         default=False,
-        help="Apply interlines to global_economy.rpy"
+        help="Apply interlines to global_economy.rpy",
     )
     argument_parser.add_argument(
         "--global-quests",
         action="store_true",
         dest="interlines_global_quests",
         default=False,
-        help="Apply interlines to global_quests.rpy"
+        help="Apply interlines to global_quests.rpy",
     )
     argument_parser.add_argument(
         "--side-images",
         action="store_true",
         dest="interlines_side_images",
         default=False,
-        help="Apply interlines to side_images.rpy"
+        help="Apply interlines to side_images.rpy",
     )
     argument_parser.add_argument(
         "--game-flow",
         action="store_true",
         dest="interlines_game_flow",
         default=False,
-        help="Apply interlines to game_flow.rpy"
+        help="Apply interlines to game_flow.rpy",
     )
     argument_parser.add_argument(
         "--common-events",
         action="store_true",
         dest="interlines_common_events",
         default=False,
-        help="Apply interlines to common event files"
+        help="Apply interlines to common event files",
     )
     argument_parser.add_argument(
         "--audio",
         action="store_true",
         dest="interlines_audio",
         default=False,
-        help="Apply interlines to audio.rpy"
+        help="Apply interlines to audio.rpy",
     )
     argument_parser.add_argument(
         "--pictures",
         action="store_true",
         dest="interlines_pictures",
         default=False,
-        help="Apply interlines to pictures.rpy"
+        help="Apply interlines to pictures.rpy",
     )
     argument_parser.add_argument(
         "--all",
         action="store_true",
         dest="interlines_all",
         default=False,
-        help="Apply interlines to all output files"
+        help="Apply interlines to all output files",
     )
 
     # Format flag - parsed manually for --single/--multiline sub-options
     argument_parser.add_argument(
-        "-f", "--format",
+        "-f",
+        "--format",
         action=FormatAction,
         dest="format_specified",
-        help="Format options (--single or --multiline)"
+        help="Format options (--single or --multiline)",
     )
 
     # Format sub-flags (parsed manually)
@@ -374,14 +428,14 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         dest="single",
         default=False,
-        help="Emit single-line dialogue (default)"
+        help="Emit single-line dialogue (default)",
     )
     argument_parser.add_argument(
         "--multiline",
         action="store_true",
         dest="multiline",
         default=False,
-        help="Emit multi-line dialogue as Ren'Py triple-quoted strings"
+        help="Emit multi-line dialogue as Ren'Py triple-quoted strings",
     )
 
     # Parse arguments
@@ -389,7 +443,9 @@ def parse_args() -> argparse.Namespace:
 
     # Validate input mode requirements
     if not getattr(args, "input_required", False):
-        argument_parser.error("Input source is required. Use -i with --file, --multiple, --directory, or --regex.")
+        argument_parser.error(
+            "Input source is required. Use -i with --file, --multiple, --directory, or --regex."
+        )
 
     # Count how many input modes were specified
     input_modes = [
@@ -417,34 +473,63 @@ def parse_args() -> argparse.Namespace:
     # Determine multiline setting (default: single-line)
     args.multiline = args.multiline if (format_specified and args.multiline) else False
 
+    # Determine verbose mode
+    # -v --full  → "all" (show INFO + OK + WARN)
+    # -v --warn  → "warn" (show only WARN)
+    # no -v      → "all" (default, same as --full)
+    verbose_specified = getattr(args, "verbose_specified", False)
+    verbose_all = getattr(args, "verbose_all", False)
+    verbose_warn = getattr(args, "verbose_warn", False)
+
+    if verbose_specified:
+        if verbose_all and verbose_warn:
+            argument_parser.error("Cannot specify both --full and --warn together.")
+        if verbose_warn:
+            args.verbose = "warn"
+        else:
+            # --full or bare -v → show all
+            args.verbose = "all"
+    else:
+        args.verbose = "all"
+
     # Build interlines_targets set based on flags
     # If --all is specified, apply to all files
     # If no specific flags but -n is used, default to maps only
     # If specific flags are used, apply only to those targets
     interlines_targets: set[str] = set()
-        
+
     if getattr(args, "interlines_all", False):
         # --all: apply to all file types
         interlines_targets = {
-            "maps", "characters", "global_switches", "global_variables",
-            "global_items", "global_economy", "global_quests",
-            "side_images", "game_flow", "common_events", "audio",
+            "maps",
+            "characters",
+            "global_switches",
+            "global_variables",
+            "global_items",
+            "global_economy",
+            "global_quests",
+            "side_images",
+            "game_flow",
+            "common_events",
+            "audio",
             "pictures",
         }
     elif args.interlines > 0:
         # -n was used, check for specific targets
-        if (getattr(args, "interlines_maps", False) or
-            getattr(args, "interlines_characters", False) or
-            getattr(args, "interlines_global_switches", False) or
-            getattr(args, "interlines_global_variables", False) or
-            getattr(args, "interlines_global_items", False) or
-            getattr(args, "interlines_global_economy", False) or
-            getattr(args, "interlines_global_quests", False) or
-            getattr(args, "interlines_side_images", False) or
-            getattr(args, "interlines_game_flow", False) or
-            getattr(args, "interlines_common_events", False) or
-            getattr(args, "interlines_audio", False) or
-            getattr(args, "interlines_pictures", False)):
+        if (
+            getattr(args, "interlines_maps", False)
+            or getattr(args, "interlines_characters", False)
+            or getattr(args, "interlines_global_switches", False)
+            or getattr(args, "interlines_global_variables", False)
+            or getattr(args, "interlines_global_items", False)
+            or getattr(args, "interlines_global_economy", False)
+            or getattr(args, "interlines_global_quests", False)
+            or getattr(args, "interlines_side_images", False)
+            or getattr(args, "interlines_game_flow", False)
+            or getattr(args, "interlines_common_events", False)
+            or getattr(args, "interlines_audio", False)
+            or getattr(args, "interlines_pictures", False)
+        ):
             # Specific targets specified, use those
             if getattr(args, "interlines_maps", False):
                 interlines_targets.add("maps")
@@ -473,7 +558,7 @@ def parse_args() -> argparse.Namespace:
         else:
             # No specific targets, default to maps only
             interlines_targets = {"maps"}
-    
+
     args.interlines_targets = interlines_targets
 
     # Build case_mode dictionary based on flags
@@ -550,7 +635,14 @@ def collect_paths(cli_args: argparse.Namespace) -> list[str]:
             print(f"Error: Directory not found: {cli_args.directory}")
             sys.exit(1)
         # Files to exclude from map processing (not map JSON files)
-        excluded_files = {"MapInfos.json", "System.json", "CommonEvents.json", "Items.json", "Weapons.json", "Armors.json"}
+        excluded_files = {
+            "MapInfos.json",
+            "System.json",
+            "CommonEvents.json",
+            "Items.json",
+            "Weapons.json",
+            "Armors.json",
+        }
         for filename in sorted(os.listdir(cli_args.directory)):
             if filename.endswith(".json") and filename not in excluded_files:
                 resolved_paths.append(os.path.join(cli_args.directory, filename))
@@ -562,8 +654,23 @@ def collect_paths(cli_args: argparse.Namespace) -> list[str]:
             print(f"Error: No files match pattern: {cli_args.regex}")
             sys.exit(1)
         # Files to exclude from map processing (not map JSON files)
-        excluded_files = {"MapInfos.json", "System.json", "CommonEvents.json", "Items.json", "Weapons.json", "Armors.json"}
-        resolved_paths.extend(sorted([p for p in pattern_matches if os.path.basename(p) not in excluded_files]))
+        excluded_files = {
+            "MapInfos.json",
+            "System.json",
+            "CommonEvents.json",
+            "Items.json",
+            "Weapons.json",
+            "Armors.json",
+        }
+        resolved_paths.extend(
+            sorted(
+                [
+                    p
+                    for p in pattern_matches
+                    if os.path.basename(p) not in excluded_files
+                ]
+            )
+        )
 
     # Ensure at least one file was found
     if not resolved_paths:
@@ -577,7 +684,8 @@ def main() -> None:
     """CLI entry point for the RPG Maker MV to Ren\'Py transpiler.
 
     Parses arguments, resolves input paths, and invokes the main
-    transpile_to_renpy pipeline.
+    transpile_to_renpy pipeline. After completion, prints a summary
+    of statistics and any warnings/errors encountered.
     """
     cli_args = parse_args()
 
@@ -587,6 +695,12 @@ def main() -> None:
         sys.exit(1)
 
     resolved_paths = collect_paths(cli_args)
+
+    # Create a logger for this transpilation run
+    # Each run gets a unique timestamped log file in the logs/ directory
+    # Verbose mode controls what gets printed to console (log file gets everything)
+    logger = TranspilerLogger(verbose=cli_args.verbose)
+
     transpile_to_renpy(
         resolved_paths,
         cli_args.output,
@@ -596,7 +710,14 @@ def main() -> None:
         indent_width=cli_args.indent_width,
         case_mode=cli_args.case_mode,
         audio_ext=cli_args.audio_ext,
+        logger=logger,
     )
+
+    # Print the transpilation summary (maps, events, files written, etc.)
+    logger.print_summary()
+
+    # Print any warnings/errors that occurred during transpilation
+    logger.print_errors()
 
 
 if __name__ == "__main__":

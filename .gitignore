@@ -9,3 +9,6 @@ inputs/
 *.pyc
 __pycache__/
 *.egg-info/
+
+# Logs
+logs/*
